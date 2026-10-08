@@ -1,0 +1,532 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Medical cabinet appointments - visitors, patient notes, scheduling and WhatsApp/email reminders.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+  SesFromAddress:
+    Type: String
+    Description: Verified SES identity used as the sender of reminder e-mails (e.g. clinic@example.com).
+  WhatsAppPhoneNumberId:
+    Type: String
+    Default: ""
+    Description: AWS End User Messaging Social phone number id (phone-number-id-...). Leave empty to disable WhatsApp.
+  WhatsAppMetaApiVersion:
+    Type: String
+    Default: v20.0
+  WhatsAppTemplatePrefix:
+    Type: String
+    Default: appointment_
+    Description: Approved WhatsApp templates are named <prefix>confirmation|reminder|rescheduled|cancelled.
+  RequireMfa:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: Require TOTP MFA for all staff users.
+  CorsOrigin:
+    Type: String
+    Default: http://localhost:3000
+    Description: Origin of the web frontend allowed to call the API.
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Optional address notified when messages land in the dead-letter queue.
+  ChatModel:
+    Type: String
+    Default: claude-haiku-4-5-20251001
+    Description: Model id used by the chat assistant (Anthropic OpenAI-compatible endpoint).
+  ChatEnablePatientNotes:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Let the chat assistant read and edit clinical notes. They are sent to the LLM provider when true.
+  DeployFrontend:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Create the S3 bucket and CloudFront distribution that host the React UI.
+
+Conditions:
+  DeployFrontendSite: !Equals [!Ref DeployFrontend, "true"]
+  IsProd: !Equals [!Ref Stage, prod]
+  MfaRequired: !Equals [!Ref RequireMfa, "true"]
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+  HasWhatsApp: !Not [!Equals [!Ref WhatsAppPhoneNumberId, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures: [arm64]
+    CodeUri: src/
+    MemorySize: 256
+    Timeout: 15
+    Tracing: Active
+    Environment:
+      Variables:
+        USERS_TABLE: !Ref UsersTable
+        PATIENTS_TABLE: !Ref PatientsTable
+        APPOINTMENTS_TABLE: !Ref AppointmentsTable
+        SETTINGS_TABLE: !Ref SettingsTable
+        NOTIFICATIONS_TABLE: !Ref NotificationsTable
+        REMINDER_QUEUE_URL: !Ref ReminderQueue
+        REMINDER_QUEUE_ARN: !GetAtt ReminderQueue.Arn
+        SCHEDULER_GROUP: !Ref ReminderScheduleGroup
+        SCHEDULER_ROLE_ARN: !GetAtt SchedulerRole.Arn
+        SES_FROM_ADDRESS: !Ref SesFromAddress
+        WHATSAPP_PHONE_NUMBER_ID: !Ref WhatsAppPhoneNumberId
+        WHATSAPP_META_API_VERSION: !Ref WhatsAppMetaApiVersion
+        WHATSAPP_TEMPLATE_PREFIX: !Ref WhatsAppTemplatePrefix
+        POWERTOOLS_SERVICE_NAME: medical-cabinet
+        LOG_LEVEL: INFO
+
+Resources:
+  # ------------------------------------------------------------------ encryption
+  DataKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Encrypts medical cabinet data at rest (DynamoDB).
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+
+  # ------------------------------------------------------------------ tables
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: user_id, AttributeType: S }
+        - { AttributeName: email, AttributeType: S }
+      KeySchema:
+        - { AttributeName: user_id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: email-index
+          KeySchema:
+            - { AttributeName: email, KeyType: HASH }
+          Projection: { ProjectionType: ALL }
+      SSESpecification: { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+
+  # Clinical free-text. Kept apart from Users so it can be locked down independently.
+  PatientsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: user_id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: user_id, KeyType: HASH }
+      SSESpecification: { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+
+  AppointmentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: appointment_id, AttributeType: S }
+        - { AttributeName: user_id, AttributeType: S }
+        - { AttributeName: day, AttributeType: S }
+        - { AttributeName: start_at, AttributeType: S }
+      KeySchema:
+        - { AttributeName: appointment_id, KeyType: HASH }
+      GlobalSecondaryIndexes:
+        - IndexName: user-index
+          KeySchema:
+            - { AttributeName: user_id, KeyType: HASH }
+            - { AttributeName: start_at, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        - IndexName: day-index
+          KeySchema:
+            - { AttributeName: day, KeyType: HASH }
+            - { AttributeName: start_at, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+      SSESpecification: { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+
+  SettingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: setting_id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: setting_id, KeyType: HASH }
+      SSESpecification: { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  NotificationsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: appointment_id, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: appointment_id, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }
+      SSESpecification: { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+
+  # ------------------------------------------------------------------ auth (staff only)
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-staff
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      MfaConfiguration: !If [MfaRequired, "ON", "OFF"]
+      EnabledMfas: !If [MfaRequired, [SOFTWARE_TOKEN_MFA], !Ref AWS::NoValue]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - { Name: verified_email, Priority: 1 }
+      DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      # Password flow is for dev/testing from the CLI only; prod uses SRP.
+      ExplicitAuthFlows: !If
+        - IsProd
+        - [ALLOW_USER_SRP_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+        - [ALLOW_USER_SRP_AUTH, ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 12
+      TokenValidityUnits: { AccessToken: minutes, IdToken: minutes, RefreshToken: hours }
+
+  GroupReception:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: { UserPoolId: !Ref UserPool, GroupName: reception, Description: Manage visitors and appointments }
+  GroupClinician:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: { UserPoolId: !Ref UserPool, GroupName: clinician, Description: Additionally read/write patient notes }
+  GroupAdmin:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: { UserPoolId: !Ref UserPool, GroupName: admin, Description: Additionally change reminder settings }
+
+  # ------------------------------------------------------------------ API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: !If
+          - DeployFrontendSite
+          - [!Ref CorsOrigin, !Sub "https://${SiteDistribution.DomainName}"]
+          - [!Ref CorsOrigin]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        AllowHeaders: [Authorization, Content-Type]
+        MaxAge: 3600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience: [!Ref UserPoolClient]
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.api.handler
+      Description: REST API for users, patients, appointments and reminder settings.
+      Policies:
+        - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref PatientsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref AppointmentsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref SettingsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref NotificationsTable }
+        - SQSSendMessagePolicy: { QueueName: !GetAtt ReminderQueue.QueueName }
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: [kms:Encrypt, kms:Decrypt, kms:GenerateDataKey, kms:DescribeKey]
+              Resource: !GetAtt DataKey.Arn
+            - Effect: Allow
+              Action: [scheduler:CreateSchedule, scheduler:DeleteSchedule]
+              Resource: !Sub arn:${AWS::Partition}:scheduler:${AWS::Region}:${AWS::AccountId}:schedule/${ReminderScheduleGroup}/*
+            - Effect: Allow
+              Action: iam:PassRole
+              Resource: !GetAtt SchedulerRole.Arn
+              Condition:
+                StringEquals:
+                  iam:PassedToService: scheduler.amazonaws.com
+      Events:
+        Any:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  # ------------------------------------------------------------------ chat assistant
+  # Set the key after the first deploy (never put it in this file):
+  #   aws secretsmanager put-secret-value --secret-id <ChatApiKeySecretArn> --secret-string "sk-ant-..."
+  ChatApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: API key of the LLM provider used by the chat assistant.
+
+  ChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_entry.handler
+      CodeUri: ../chat-server/src/ # src/ only: the local .env with the key lives one level up
+      Description: Chat assistant. Calls the LLM and uses the API Lambda as tools, with the caller's own identity.
+      MemorySize: 512
+      Timeout: 29 # API Gateway HTTP APIs cut connections at 30 s
+      Environment:
+        Variables:
+          API_FUNCTION_NAME: !Ref ApiFunction
+          LLM_API_KEY_SECRET_ARN: !Ref ChatApiKeySecret
+          LLM_MODEL: !Ref ChatModel
+          ENABLE_PATIENT_NOTES: !Ref ChatEnablePatientNotes
+      Policies:
+        - LambdaInvokePolicy: { FunctionName: !Ref ApiFunction }
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref ChatApiKeySecret
+      Events:
+        Chat:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /chat, Method: POST }
+        ChatHealth:
+          Type: HttpApi
+          Properties: { ApiId: !Ref HttpApi, Path: /chat/health, Method: GET }
+
+  # ------------------------------------------------------------------ website (optional)
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Condition: DeployFrontendSite
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+
+  SiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: DeployFrontendSite
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-site
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  SiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: DeployFrontendSite
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} chat UI
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteOriginAccessControl.Id
+            S3OriginConfig: { OriginAccessIdentity: "" }
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+          ResponseHeadersPolicyId: 67f7725c-6f97-4210-82d7-5512b31e9d03 # Managed-SecurityHeadersPolicy
+        CustomErrorResponses: # single-page app: unknown paths serve index.html
+          - { ErrorCode: 403, ResponseCode: 200, ResponsePagePath: /index.html }
+          - { ErrorCode: 404, ResponseCode: 200, ResponsePagePath: /index.html }
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: DeployFrontendSite
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${SiteDistribution}
+
+  # ------------------------------------------------------------------ reminders
+  ReminderScheduleGroup:
+    Type: AWS::Scheduler::ScheduleGroup
+    Properties:
+      Name: !Sub ${AWS::StackName}-reminders
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: send-to-reminder-queue
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt ReminderQueue.Arn
+
+  ReminderDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  ReminderQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 180 # >= 6x SenderFunction timeout
+      SqsManagedSseEnabled: true # SQS-managed keys: the Scheduler role needs no KMS permissions
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReminderDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  SenderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handlers.sender.handler
+      Description: Delivers queued reminders by e-mail (SES) and WhatsApp.
+      Timeout: 30
+      # No access to the Patients table: messages never contain clinical data.
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBReadPolicy: { TableName: !Ref AppointmentsTable }
+        - DynamoDBReadPolicy: { TableName: !Ref SettingsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey, kms:DescribeKey]
+              Resource: !GetAtt DataKey.Arn
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: !Sub arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*
+            - !If
+              - HasWhatsApp
+              - Effect: Allow
+                Action: social-messaging:SendWhatsAppMessage
+                Resource: !Sub arn:${AWS::Partition}:social-messaging:${AWS::Region}:${AWS::AccountId}:phone-number-id/*
+              - !Ref AWS::NoValue
+      Events:
+        Reminders:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ReminderQueue.Arn
+            BatchSize: 5
+            FunctionResponseTypes: [ReportBatchItemFailures]
+            ScalingConfig:
+              MaximumConcurrency: 5
+
+  # ------------------------------------------------------------------ monitoring
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlarmEmail
+    Properties:
+      Subscription:
+        - { Protocol: email, Endpoint: !Ref AlarmEmail }
+
+  DeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A reminder could not be delivered after 3 attempts.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - { Name: QueueName, Value: !GetAtt ReminderDeadLetterQueue.QueueName }
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmEmail, [!Ref AlarmTopic], !Ref AWS::NoValue]
+
+Outputs:
+  ApiUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  ChatApiKeySecretArn:
+    Description: Store the LLM key here with aws secretsmanager put-secret-value
+    Value: !Ref ChatApiKeySecret
+  SiteUrl:
+    Condition: DeployFrontendSite
+    Value: !Sub https://${SiteDistribution.DomainName}
+  SiteBucketName:
+    Condition: DeployFrontendSite
+    Value: !Ref SiteBucket
+  SiteDistributionId:
+    Condition: DeployFrontendSite
+    Value: !Ref SiteDistribution
+  ReminderQueueUrl:
+    Value: !Ref ReminderQueue
+  DeadLetterQueueUrl:
+    Value: !Ref ReminderDeadLetterQueue
