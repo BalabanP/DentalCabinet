@@ -28,11 +28,11 @@ def sesv2():
 
 
 @lru_cache
-def social_messaging():
-    return boto3.client("socialmessaging")
+def ssm():
+    return boto3.client("ssm")
 
 
 def reset_clients() -> None:
     """Drop cached clients (used by tests that swap in mocked AWS)."""
-    for fn in (_dynamodb, sqs, scheduler, sesv2, social_messaging):
+    for fn in (_dynamodb, sqs, scheduler, sesv2, ssm):
         fn.cache_clear()

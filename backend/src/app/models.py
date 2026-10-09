@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from typing import Annotated, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,7 +15,7 @@ from pydantic import (
 )
 
 Phone = Annotated[str, StringConstraints(pattern=r"^\+[1-9]\d{6,14}$")]
-Locale = Literal["en", "ro", "ru"]
+Locale = Literal["en", "ro"]
 
 MAX_REMINDER_MINUTES = 60 * 24 * 60  # 60 days
 MAX_REMINDERS = 10
@@ -33,7 +34,7 @@ class UserIn(_Strict):
     phone: Phone
     locale: Locale = "en"
     notify_email: bool = True
-    notify_whatsapp: bool = True
+    notify_sms: bool = True
 
     @field_validator("email")
     @classmethod
@@ -47,7 +48,7 @@ class UserPatch(_Strict):
     phone: Optional[Phone] = None
     locale: Optional[Locale] = None
     notify_email: Optional[bool] = None
-    notify_whatsapp: Optional[bool] = None
+    notify_sms: Optional[bool] = None
 
     @field_validator("email")
     @classmethod
@@ -134,9 +135,12 @@ class ReminderRule(BaseModel):
         return f"m{self.minutes_before}"
 
 
-class Channels(_Strict):
+class Channels(BaseModel):
+    # extra="ignore": settings saved before WhatsApp was removed still contain `whatsapp`; they must keep loading
+    model_config = ConfigDict(extra="ignore")
+
     email: bool = True
-    whatsapp: bool = True
+    sms: bool = False  # off until an SMS gateway is configured
 
 
 class ReminderSettings(_Strict):
@@ -174,3 +178,48 @@ class ReminderSettings(_Strict):
     @property
     def tz(self) -> ZoneInfo:
         return ZoneInfo(self.timezone)
+
+
+# ---------- editable message texts ----------
+
+MessageKind = Literal["confirmation", "reminder", "rescheduled", "cancelled"]
+MESSAGE_KINDS: tuple[str, ...] = ("confirmation", "reminder", "rescheduled", "cancelled")
+PLACEHOLDERS: tuple[str, ...] = ("name", "cabinet", "date", "time", "phone")
+_TOKEN = re.compile(r"\{([^{}]*)\}")
+
+
+def _check_template_text(value: Optional[str]) -> Optional[str]:
+    """Blank means "use the built-in text". Only the known {placeholders} may use curly braces."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    unknown = sorted({t for t in _TOKEN.findall(value) if t not in PLACEHOLDERS})
+    if unknown:
+        raise ValueError("unknown placeholder: " + ", ".join("{" + t + "}" for t in unknown))
+    if "{" in _TOKEN.sub("", value) or "}" in _TOKEN.sub("", value):
+        raise ValueError("stray curly brace; write placeholders as {name}, {cabinet}, {date}, {time} or {phone}")
+    return value
+
+
+class TemplateFields(_Strict):
+    """Texts of one message kind in one language. A missing or blank field falls back to the built-in text."""
+
+    email_subject: Optional[str] = Field(default=None, max_length=150)
+    email_body: Optional[str] = Field(default=None, max_length=2000)
+    sms_body: Optional[str] = Field(default=None, max_length=600)
+
+    @field_validator("email_subject", "email_body", "sms_body")
+    @classmethod
+    def _valid(cls, v: Optional[str]) -> Optional[str]:
+        return _check_template_text(v)
+
+
+class MessageTemplates(_Strict):
+    overrides: dict[MessageKind, dict[Locale, TemplateFields]] = Field(default_factory=dict)
+
+
+class TemplatePreviewIn(TemplateFields):
+    kind: MessageKind
+    locale: Locale

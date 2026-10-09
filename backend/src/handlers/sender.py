@@ -1,4 +1,4 @@
-"""SQS consumer: turns queued reminder/notice messages into e-mails and WhatsApp messages."""
+"""SQS consumer: turns queued reminder/notice messages into e-mails and SMS."""
 
 import json
 
@@ -10,12 +10,24 @@ from app.timeutil import parse_iso, utc_now
 ACTIVE_KINDS = {"confirmation", "reminder", "rescheduled"}
 
 
+def _reason(exc: Exception) -> str:
+    """Short, PII-free failure reason for the delivery log, e.g. "MessageRejected" or "AccessDenied".
+
+    AWS error messages can contain the recipient's address, so only the error *code* is stored.
+    """
+    response = getattr(exc, "response", None)
+    code = response.get("Error", {}).get("Code") if isinstance(response, dict) else None
+    if not code and isinstance(getattr(exc, "code", None), int):  # urllib HTTPError, e.g. wrong SMS gateway login
+        code = f"HTTP {exc.code}"
+    return str(code or type(exc).__name__)
+
+
 def _channels(settings, user) -> list[str]:
     channels = []
     if settings.channels.email and user.get("notify_email", True) and user.get("email"):
         channels.append("email")
-    if settings.channels.whatsapp and user.get("notify_whatsapp", True) and user.get("phone"):
-        channels.append("whatsapp")
+    if settings.channels.sms and user.get("notify_sms", True) and user.get("phone"):
+        channels.append("sms")
     return channels
 
 
@@ -41,25 +53,25 @@ def process(msg: dict) -> None:
     if not user:
         return
     settings = repo.get_reminder_settings()
-    rendered = notifications.render(kind, user, start, settings)
+    rendered = notifications.render(kind, user, start, settings, repo.get_message_templates())
 
     errors = []
     for channel in _channels(settings, user):
         sk = f"{msg['dedupe']}#{channel}"
         if not repo.claim_notification(appointment_id, sk, kind, channel):
             continue  # already sent (SQS redelivery) or in flight
-        if channel == "whatsapp" and not notifications.whatsapp_enabled():
-            repo.finish_notification(appointment_id, sk, "skipped", error="whatsapp not configured")
+        if channel == "sms" and not notifications.sms_enabled():
+            repo.finish_notification(appointment_id, sk, "skipped", error="sms gateway not configured")
             continue
         try:
             if channel == "email":
                 provider_id = notifications.send_email(user["email"], rendered)
             else:
-                provider_id = notifications.send_whatsapp(user["phone"], rendered)
+                provider_id = notifications.send_sms(user["phone"], rendered)
             repo.finish_notification(appointment_id, sk, "sent", provider_id=provider_id)
         except Exception as exc:  # noqa: BLE001 - recorded, then retried through SQS
             logger.exception("send failed", extra={"appointment_id": appointment_id, "channel": channel})
-            repo.finish_notification(appointment_id, sk, "failed", error=type(exc).__name__)
+            repo.finish_notification(appointment_id, sk, "failed", error=_reason(exc))
             errors.append(channel)
     if errors:
         raise RuntimeError(f"delivery failed for: {', '.join(errors)}")

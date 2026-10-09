@@ -171,3 +171,27 @@ def test_schedule_settings_validation():
         ScheduleSettings(working_hours={"funday": []})
     with pytest.raises(ValidationError):
         ScheduleSettings(slot_minutes=1)
+
+
+def test_booking_outside_working_hours_is_rejected(aws):
+    uid = make_user()["user_id"]
+    day = next_weekday(1)  # Tuesday, default hours 09:00-17:00
+    for hhmm, minutes in [("08:00", 30), ("17:00", 30), ("16:45", 30), ("23:30", 60)]:
+        status, body = book_at(uid, day, hhmm, minutes)
+        assert status == 400, (hhmm, body)
+        assert "working hours" in body["message"]
+
+
+def test_booking_inside_working_hours_and_weekend_rules(aws):
+    uid = make_user()["user_id"]
+    assert book_at(uid, next_weekday(1), "16:30", 30)[0] == 201  # ends exactly at closing time
+    assert book_at(uid, next_weekday(5), "10:00")[0] == 400  # Saturday is closed
+
+
+def test_reschedule_outside_working_hours_is_rejected(aws):
+    uid = make_user()["user_id"]
+    day = next_weekday(2)
+    status, appt = book_at(uid, day, "10:00")
+    assert status == 201
+    status, body = call("PATCH", f"/appointments/{appt['appointment_id']}", {"start_at": f"{day}T20:00:00"})
+    assert status == 400 and "working hours" in body["message"]

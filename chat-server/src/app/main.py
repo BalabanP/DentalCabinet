@@ -23,14 +23,13 @@ from .llm import llm_api_call_streamed
 log = logging.getLogger("chat")
 app = FastAPI(title="Medical Cabinet chat")
 
-IN_LAMBDA = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-if not IN_LAMBDA:  # on AWS, API Gateway answers CORS itself
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-        allow_methods=["POST", "GET"],
-        allow_headers=["*"],
-    )
+# Locally the UI runs on :5173; on AWS set CORS_ALLOW_ORIGIN (one origin, "*", or a comma-separated list).
+_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ALLOW_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
+app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=["POST", "GET", "OPTIONS"], allow_headers=["*"])
 
 
 class ChatRequest(BaseModel):

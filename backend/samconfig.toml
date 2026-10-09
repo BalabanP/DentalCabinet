@@ -13,7 +13,7 @@ capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
 # SesFromAddress must be a verified SES identity - change it before deploying.
-parameter_overrides = "Stage=dev SesFromAddress=pbalaban6@gmail.com RequireMfa=false CorsOrigin=http://localhost:3000"
+parameter_overrides = "Stage=dev SesFromAddress=pbalaban6@gmail.com RequireMfa=false CorsOrigin=* DeployFrontend=true"
 
 [prod.deploy.parameters]
 stack_name = "medical-cabinet-prod"
@@ -21,4 +21,5 @@ region = "eu-central-1"
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-parameter_overrides = "Stage=prod SesFromAddress=pbalaban6@gmail.com RequireMfa=true CorsOrigin=https://app.example.com"
+parameter_overrides = "Stage=prod SesFromAddress=pbalaban6@gmail.com RequireMfa=true CorsOrigin=*"
+

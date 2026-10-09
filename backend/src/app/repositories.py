@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError
 from . import clients
 from .config import get_config
 from .errors import BadRequest, Conflict, NotFound
-from .models import ReminderSettings, ScheduleSettings
+from .models import MessageTemplates, ReminderSettings, ScheduleSettings
 from .timeutil import to_iso, utc_now
 
 NOTIFICATION_RETENTION_DAYS = 365
@@ -256,6 +256,22 @@ def get_reminder_settings() -> ReminderSettings:
 
 def put_reminder_settings(settings: ReminderSettings) -> ReminderSettings:
     return _put_setting("reminders", settings)
+
+
+def get_message_templates() -> MessageTemplates:
+    return _get_setting("messages", MessageTemplates)
+
+
+def put_message_templates(templates: MessageTemplates) -> MessageTemplates:
+    # exclude_none: only what was customised is stored; everything else keeps following the built-in text
+    clients.table(get_config().settings_table).put_item(
+        Item={
+            "setting_id": "messages",
+            "config": templates.model_dump(mode="json", exclude_none=True),
+            "updated_at": to_iso(utc_now()),
+        }
+    )
+    return templates
 
 
 def get_schedule_settings() -> ScheduleSettings:

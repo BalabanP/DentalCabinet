@@ -51,7 +51,7 @@ S = {"type": "string"}
 ID = {"type": "string", "description": "Id returned by an earlier tool call. Never invent ids."}
 DATE = {"type": "string", "description": "YYYY-MM-DD, cabinet-local date"}
 LOCAL_DT = {"type": "string", "description": "Cabinet-local date and time, YYYY-MM-DDTHH:MM:00 (no timezone suffix)"}
-LOCALE = {"type": "string", "enum": ["en", "ro", "ru"], "description": "Language of reminder messages"}
+LOCALE = {"type": "string", "enum": ["en", "ro"], "description": "Language of reminder messages"}
 PHONE = {"type": "string", "description": "E.164 with country code, e.g. +40712345678"}
 
 TOOLS: list[Tool] = [
@@ -62,12 +62,12 @@ TOOLS: list[Tool] = [
     Tool("get_visitor", "Get one visitor by id.", "GET", "/users/{user_id}", {"user_id": ID}, ["user_id"]),
     Tool("create_visitor", "Create a new visitor.", "POST", "/users",
          {"name": S, "email": S, "phone": PHONE, "locale": LOCALE,
-          "notify_email": {"type": "boolean"}, "notify_whatsapp": {"type": "boolean"}},
+          "notify_email": {"type": "boolean"}},
          ["name", "email", "phone"], write=True),
     Tool("update_visitor", "Change fields of an existing visitor. Send only the fields that change.", "PATCH",
          "/users/{user_id}",
          {"user_id": ID, "name": S, "email": S, "phone": PHONE, "locale": LOCALE,
-          "notify_email": {"type": "boolean"}, "notify_whatsapp": {"type": "boolean"}},
+          "notify_email": {"type": "boolean"}},
          ["user_id"], write=True),
     Tool("delete_visitor", "Permanently delete a visitor and their patient notes. Fails if they have upcoming "
          "appointments.", "DELETE", "/users/{user_id}", {"user_id": ID}, ["user_id"], write=True),
@@ -105,7 +105,7 @@ TOOLS: list[Tool] = [
          ["appointment_id"], write=True),
     Tool("cancel_appointment", "Cancel an appointment. The visitor is notified.", "POST",
          "/appointments/{appointment_id}/cancel", {"appointment_id": ID}, ["appointment_id"], write=True),
-    Tool("get_appointment_notifications", "Delivery log (email / WhatsApp) of the messages sent for an appointment.",
+    Tool("get_appointment_notifications", "Delivery log (email / SMS) of the messages sent for an appointment.",
          "GET", "/appointments/{appointment_id}/notifications", {"appointment_id": ID}, ["appointment_id"]),
     # ---- settings (read only)
     Tool("get_reminder_settings", "Read the reminder configuration (offsets, channels, timezone).", "GET",

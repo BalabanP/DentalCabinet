@@ -2,26 +2,42 @@
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, Response, content_types
+import os
+
+from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, CORSConfig, Response, content_types
 from pydantic import ValidationError
 
-from app import repositories as repo, services
+from app import notifications, repositories as repo, services
 from app.errors import AppError, BadRequest, Forbidden, NotFound
 from app.log import logger
 from app.models import (
     AppointmentIn,
     AppointmentPatch,
+    MessageTemplates,
     PatientIn,
     ReminderSettings,
+    PLACEHOLDERS,
     ScheduleSettings,
+    TemplatePreviewIn,
     UserIn,
     UserPatch,
 )
 from app.timeutil import days_between, utc_now
 
-app = APIGatewayHttpResolver()
+# CORS is handled here, not by API Gateway: the catch-all route with a login authorizer makes the gateway's
+# own CORS setting unreliable for browser pre-checks. `CORS_ALLOW_ORIGIN` is one origin, "*", or a
+# comma-separated list. The API uses bearer tokens (no cookies), so "*" does not expose anything extra.
+_origins = [o.strip() for o in os.environ.get("CORS_ALLOW_ORIGIN", "*").split(",") if o.strip()] or ["*"]
+app = APIGatewayHttpResolver(
+    cors=CORSConfig(
+        allow_origin=_origins[0],
+        extra_origins=_origins[1:] or None,
+        allow_headers=["Authorization", "Content-Type"],
+        max_age=3600,
+    )
+)
 
 ADMIN = {"admin"}
 CLINICAL = {"clinician", "admin"}  # may read/write patient notes
@@ -254,6 +270,49 @@ def get_schedule():
 def put_schedule():
     require(ADMIN)
     return repo.put_schedule_settings(ScheduleSettings.model_validate(_body())).model_dump(mode="json")
+
+
+# ---------- message texts (e-mail and SMS) ----------
+
+
+def _templates_response(templates: MessageTemplates) -> dict:
+    return {
+        "placeholders": list(PLACEHOLDERS),
+        "defaults": notifications.all_defaults(),
+        "overrides": templates.model_dump(mode="json", exclude_none=True)["overrides"],
+    }
+
+
+@app.get("/settings/messages")
+def get_messages():
+    require(STAFF)
+    return _templates_response(repo.get_message_templates())
+
+
+@app.put("/settings/messages")
+def put_messages():
+    require(ADMIN)
+    return _templates_response(repo.put_message_templates(MessageTemplates.model_validate(_body())))
+
+
+@app.post("/settings/messages/preview")
+def preview_message():
+    """Render one message with sample data, exactly as visitors will receive it. Saves nothing."""
+    require(STAFF)
+    data = TemplatePreviewIn.model_validate(_body())
+    settings = repo.get_reminder_settings()
+    sample_start = (utc_now().astimezone(settings.tz) + timedelta(days=3)).replace(hour=10, minute=0, second=0, microsecond=0)
+    fields = {k: v for k, v in data.model_dump(exclude={"kind", "locale"}).items() if v}
+    templates = MessageTemplates.model_validate({"overrides": {data.kind: {data.locale: fields}}})
+    sample_user = {"name": "Ana Pop", "locale": data.locale}
+    rendered = notifications.render(data.kind, sample_user, sample_start, settings, templates)
+    return {
+        "email_subject": rendered.subject,
+        "email_html": rendered.html,
+        "email_text": rendered.text,
+        "sms_text": notifications.sms_text(rendered.sms),
+        "sms": notifications.sms_info(rendered.sms),
+    }
 
 
 # ---------- reminder settings ----------

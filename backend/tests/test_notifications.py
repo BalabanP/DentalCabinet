@@ -26,15 +26,12 @@ SETTINGS = ReminderSettings(cabinet_name="Dr. Pop Cabinet", timezone="Europe/Buc
 
 
 @pytest.mark.parametrize("kind", ["confirmation", "reminder", "rescheduled", "cancelled"])
-@pytest.mark.parametrize("locale", ["en", "ro", "ru"])
+@pytest.mark.parametrize("locale", ["en", "ro"])
 def test_every_kind_and_locale_renders(kind, locale):
     r = notifications.render(kind, {"name": "Ana", "locale": locale}, START, SETTINGS)
     assert "Ana" in r.text and "Dr. Pop Cabinet" in r.text
     assert "24.10.2026" in r.text and "09:00" in r.text
     assert "+40211234567" in r.text
-    assert r.whatsapp_template == f"appointment_{kind}"
-    assert r.whatsapp_language == locale
-    assert r.whatsapp_params == ["Ana", "Dr. Pop Cabinet", "24.10.2026", "09:00"]
 
 
 def test_unknown_locale_falls_back_to_english():
