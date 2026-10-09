@@ -117,6 +117,21 @@ def test_health_works_under_the_chat_prefix(lambda_env):
     assert res["statusCode"] == 200 and json.loads(res["body"])["api_key_set"] is True
 
 
+def test_chat_preflight_is_answered_without_a_token(monkeypatch):
+    # the browser's pre-check carries no token, so there are no verified claims and no authorizer block
+    event = apigw_event({}, claims=None, path="/chat", method="OPTIONS") | {"body": None}
+    event["headers"] |= {
+        "origin": "http://localhost:5173",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "authorization,content-type",
+    }
+    res = lambda_entry.handler(event, None)
+    headers = {k.lower(): v for k, v in res["headers"].items()}
+    assert res["statusCode"] == 200
+    assert headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "authorization" in headers["access-control-allow-headers"].lower()
+
+
 def test_api_key_is_read_from_secrets_manager(monkeypatch):
     calls = []
 

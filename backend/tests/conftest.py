@@ -14,6 +14,7 @@ os.environ.update(
     AWS_ACCESS_KEY_ID="test",
     AWS_SECRET_ACCESS_KEY="test",
     POWERTOOLS_LOG_LEVEL="WARNING",
+    CORS_ALLOW_ORIGIN="https://site.example.com,http://localhost:5174",
 )
 
 TABLES = {
@@ -76,7 +77,6 @@ def aws(monkeypatch):
         monkeypatch.setenv("SCHEDULER_GROUP", "reminders")
         monkeypatch.setenv("SCHEDULER_ROLE_ARN", "arn:aws:iam::123456789012:role/scheduler")
         monkeypatch.setenv("SES_FROM_ADDRESS", "clinic@example.com")
-        monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "phone-number-id-123")
 
         get_config.cache_clear()
         clients.reset_clients()

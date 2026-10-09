@@ -1,7 +1,7 @@
 """Local dev server: the real API + reminder-sender code running on in-memory fake AWS (moto).
 
 No AWS account, no Docker. Data lives in memory and is lost when the process stops.
-E-mail / WhatsApp are printed to the console instead of being sent.
+E-mail and SMS are printed to the console instead of being sent.
 Auth is bypassed: every request acts as a user in the groups given by the `X-Dev-Groups`
 header (default: admin). Never expose this server beyond localhost.
 
@@ -35,7 +35,6 @@ os.environ.update(
     SCHEDULER_GROUP="reminders",
     SCHEDULER_ROLE_ARN="arn:aws:iam::123456789012:role/local",
     SES_FROM_ADDRESS="clinic@local.test",
-    WHATSAPP_PHONE_NUMBER_ID="local",
     POWERTOOLS_LOG_LEVEL="WARNING",
 )
 
@@ -97,13 +96,13 @@ def install_console_providers() -> None:
         print(f"\n[{stamp()}] EMAIL    to={to}\n  subject: {msg.subject}\n  {msg.text}\n", flush=True)
         return "local-email-id"
 
-    def fake_whatsapp(phone, msg):
-        print(f"\n[{stamp()}] WHATSAPP to={phone} template={msg.whatsapp_template}/{msg.whatsapp_language} "
-              f"params={msg.whatsapp_params}\n", flush=True)
-        return "local-whatsapp-id"
+    def fake_sms(phone, msg):
+        print(f"\n[{stamp()}] SMS      to={phone}\n  {notifications.sms_text(msg.sms)}\n", flush=True)
+        return "local-sms-id"
 
     notifications.send_email = fake_email
-    notifications.send_whatsapp = fake_whatsapp
+    notifications.send_sms = fake_sms
+    notifications.sms_enabled = lambda: True
 
 
 def seed_settings() -> None:
@@ -132,12 +131,14 @@ def seed_demo_data() -> None:
         ("Ana Pop", "ana.pop@example.com", "+40712345001", "ro"),
         ("Mihai Popescu", "mihai.popescu@example.com", "+40712345002", "ro"),
         ("Elena Ionescu", "elena.ionescu@example.com", "+40712345003", "en"),
-        ("Ivan Petrov", "ivan.petrov@example.com", "+40712345004", "ru"),
+        ("Ivan Petrov", "ivan.petrov@example.com", "+40712345004", "en"),
     ]
     users = [repo.create_user(UserIn(name=n, email=e, phone=p, locale=loc).model_dump()) for n, e, p, loc in people]
     repo.upsert_patient(users[0]["user_id"], "Hypertension, follow-up every 3 months. Allergic to penicillin.", "seed")
     tz = repo.get_reminder_settings().tz
     day = (utc_now().astimezone(tz) + timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+    while day.weekday() >= 5:  # the default working hours are Monday to Friday
+        day += timedelta(days=1)
     services.book(AppointmentIn(user_id=users[0]["user_id"], start_at=day, duration_minutes=30))
     services.book(AppointmentIn(user_id=users[1]["user_id"], start_at=day + timedelta(hours=1), duration_minutes=45))
 

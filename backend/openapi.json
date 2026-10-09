@@ -1,0 +1,2208 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Medical Cabinet API",
+    "version": "1.0.0",
+    "description": "Visitors, patient notes, appointments and reminder settings. Replace REGION, ACCOUNT_ID, FUNCTION_NAME, COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID before importing."
+  },
+  "x-amazon-apigateway-cors": {
+    "allowOrigins": [
+      "http://localhost:3000"
+    ],
+    "allowMethods": [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS"
+    ],
+    "allowHeaders": [
+      "Authorization",
+      "Content-Type"
+    ],
+    "maxAge": 3600
+  },
+  "security": [
+    {
+      "CognitoJwt": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Users"
+    },
+    {
+      "name": "Patients"
+    },
+    {
+      "name": "Appointments"
+    },
+    {
+      "name": "Availability"
+    },
+    {
+      "name": "Settings"
+    }
+  ],
+  "paths": {
+    "/users": {
+      "post": {
+        "summary": "Create a visitor (staff)",
+        "tags": [
+          "Users"
+        ],
+        "operationId": "createUser",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserInput"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "get": {
+        "summary": "List visitors, or look one up by email (staff)",
+        "tags": [
+          "Users"
+        ],
+        "operationId": "listUsers",
+        "responses": {
+          "200": {
+            "description": "Page of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "description": "Exact email lookup",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Search name, email or phone (case-insensitive substring); limit applies, default 25",
+            "schema": {
+              "type": "string",
+              "minLength": 2
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Page size",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "next_token",
+            "in": "query",
+            "required": false,
+            "description": "Token from the previous page",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}": {
+      "get": {
+        "summary": "Get a visitor (staff)",
+        "tags": [
+          "Users"
+        ],
+        "operationId": "getUser",
+        "responses": {
+          "200": {
+            "description": "User",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "patch": {
+        "summary": "Update a visitor (staff)",
+        "tags": [
+          "Users"
+        ],
+        "operationId": "updateUser",
+        "responses": {
+          "200": {
+            "description": "Updated user",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPatch"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "delete": {
+        "summary": "Delete a visitor and their patient record (staff)",
+        "tags": [
+          "Users"
+        ],
+        "operationId": "deleteUser",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "User has upcoming appointments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}/patient": {
+      "get": {
+        "summary": "Read patient notes (clinician)",
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "getPatient",
+        "responses": {
+          "200": {
+            "description": "Patient record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Patient"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "put": {
+        "summary": "Create or replace patient notes (clinician)",
+        "tags": [
+          "Patients"
+        ],
+        "operationId": "putPatient",
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Patient"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatientInput"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/appointments": {
+      "post": {
+        "summary": "Book an appointment (staff)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "createAppointment",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentInput"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "get": {
+        "summary": "List appointments by day range or by visitor (staff)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "listAppointments",
+        "responses": {
+          "200": {
+            "description": "Appointments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppointmentList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "First day, cabinet-local (default today)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last day, max 62 days after from",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "description": "Return this visitor's appointments instead",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter by status",
+            "schema": {
+              "$ref": "#/components/schemas/AppointmentStatus"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/appointments/{appointment_id}": {
+      "get": {
+        "summary": "Get an appointment (staff)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "getAppointment",
+        "responses": {
+          "200": {
+            "description": "Appointment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "patch": {
+        "summary": "Reschedule, edit, or mark completed / no_show (staff)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "updateAppointment",
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentPatch"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/appointments/{appointment_id}/cancel": {
+      "post": {
+        "summary": "Cancel an appointment (staff, idempotent)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "cancelAppointment",
+        "responses": {
+          "200": {
+            "description": "Cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/appointments/{appointment_id}/notifications": {
+      "get": {
+        "summary": "Delivery log of reminders (staff)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "listNotifications",
+        "responses": {
+          "200": {
+            "description": "Notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/availability": {
+      "get": {
+        "summary": "Free appointment start times within working hours (staff)",
+        "tags": [
+          "Availability"
+        ],
+        "operationId": "getAvailability",
+        "responses": {
+          "200": {
+            "description": "Free slots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Availability"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "description": "First day (cabinet-local)"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Last day (default = from, max 14 days)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "duration_minutes",
+            "in": "query",
+            "required": false,
+            "description": "Visit length; default = slot_minutes",
+            "schema": {
+              "type": "integer",
+              "minimum": 5,
+              "maximum": 480
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/settings/schedule": {
+      "get": {
+        "summary": "Read working hours (staff)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "getScheduleSettings",
+        "responses": {
+          "200": {
+            "description": "Schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "put": {
+        "summary": "Replace working hours (admin)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "putScheduleSettings",
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleSettings"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/settings/messages": {
+      "get": {
+        "summary": "Message texts: built-in defaults and customised overrides (staff)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "getMessageTexts",
+        "responses": {
+          "200": {
+            "description": "Texts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "put": {
+        "summary": "Replace the customised message texts (admin). Blank fields fall back to the built-in text",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "putMessageTexts",
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesConfig"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageOverridesInput"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/settings/messages/preview": {
+      "post": {
+        "summary": "Render one message with sample data, exactly as a visitor receives it. Stores nothing (staff)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "previewMessage",
+        "responses": {
+          "200": {
+            "description": "Preview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagePreviewRequest"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/settings/reminders": {
+      "get": {
+        "summary": "Read reminder settings (staff)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "getReminderSettings",
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "put": {
+        "summary": "Replace reminder settings (admin)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "putReminderSettings",
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReminderSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderSettings"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/settings/reminders/apply-to-existing": {
+      "post": {
+        "summary": "Re-plan reminders of all future appointments (admin)",
+        "tags": [
+          "Settings"
+        ],
+        "operationId": "applyReminderSettings",
+        "responses": {
+          "200": {
+            "description": "Result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "CognitoJwt": {
+        "type": "oauth2",
+        "flows": {},
+        "x-amazon-apigateway-authorizer": {
+          "type": "jwt",
+          "identitySource": "$request.header.Authorization",
+          "jwtConfiguration": {
+            "issuer": "https://cognito-idp.REGION.amazonaws.com/COGNITO_USER_POOL_ID",
+            "audience": [
+              "COGNITO_CLIENT_ID"
+            ]
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "UserInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "phone"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{6,14}$",
+            "description": "E.164",
+            "example": "+40712345678"
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ro"
+            ],
+            "default": "en"
+          },
+          "notify_email": {
+            "type": "boolean",
+            "default": true
+          },
+          "notify_sms": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "UserPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{6,14}$",
+            "description": "E.164",
+            "example": "+40712345678"
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ro"
+            ],
+            "default": "en"
+          },
+          "notify_email": {
+            "type": "boolean",
+            "default": true
+          },
+          "notify_sms": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{6,14}$",
+            "description": "E.164",
+            "example": "+40712345678"
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "en",
+              "ro"
+            ],
+            "default": "en"
+          },
+          "notify_email": {
+            "type": "boolean",
+            "default": true
+          },
+          "notify_sms": {
+            "type": "boolean",
+            "default": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UserList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "next_token": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PatientInput": {
+        "type": "object",
+        "required": [
+          "notes"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "notes": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        }
+      },
+      "Patient": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_by": {
+            "type": "string"
+          }
+        }
+      },
+      "AppointmentStatus": {
+        "type": "string",
+        "enum": [
+          "scheduled",
+          "cancelled",
+          "completed",
+          "no_show"
+        ]
+      },
+      "AppointmentInput": {
+        "type": "object",
+        "required": [
+          "user_id",
+          "start_at"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Offset-aware, or naive = cabinet-local time"
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 480,
+            "default": 30
+          },
+          "internal_note": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "Never sent to the visitor"
+          },
+          "allow_overlap": {
+            "type": "boolean",
+            "default": false,
+            "description": "Override the double-booking check (409 otherwise)"
+          }
+        }
+      },
+      "AppointmentPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "description": "Change either start_at or status, not both",
+        "properties": {
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "duration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 480
+          },
+          "internal_note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "no_show"
+            ]
+          },
+          "allow_overlap": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "ScheduledReminder": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "minutes_before": {
+            "type": "integer"
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "schedule_name": {
+            "type": "string"
+          }
+        }
+      },
+      "Appointment": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "day": {
+            "type": "string",
+            "format": "date"
+          },
+          "duration_minutes": {
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AppointmentStatus"
+          },
+          "internal_note": {
+            "type": "string"
+          },
+          "reminders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScheduledReminder"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AppointmentList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Appointment"
+            }
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string"
+          },
+          "sk": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "confirmation",
+              "reminder",
+              "rescheduled",
+              "cancelled"
+            ]
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "email",
+              "sms",
+              "whatsapp"
+            ],
+            "description": "whatsapp only appears in old log rows"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sending",
+              "sent",
+              "failed",
+              "skipped"
+            ]
+          },
+          "provider_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "NotificationList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          }
+        }
+      },
+      "ReminderRule": {
+        "type": "object",
+        "required": [
+          "minutes_before"
+        ],
+        "properties": {
+          "minutes_before": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400,
+            "example": 1440
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "key": {
+            "type": "string",
+            "readOnly": true,
+            "example": "m1440"
+          }
+        }
+      },
+      "ReminderSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cabinet_name": {
+            "type": "string",
+            "maxLength": 120,
+            "default": "Medical Cabinet"
+          },
+          "cabinet_phone": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 32
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Europe/Bucharest",
+            "default": "UTC"
+          },
+          "send_on_booking": {
+            "type": "boolean",
+            "default": true
+          },
+          "send_on_change": {
+            "type": "boolean",
+            "default": true
+          },
+          "channels": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "email": {
+                "type": "boolean",
+                "default": true
+              },
+              "sms": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          },
+          "reminders": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/ReminderRule"
+            },
+            "description": "Unique minutes_before values. Default: 4320, 1440, 120"
+          }
+        }
+      },
+      "TimeWindow": {
+        "type": "object",
+        "required": [
+          "start",
+          "end"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "start": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "example": "09:00"
+          },
+          "end": {
+            "type": "string",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "example": "17:00"
+          }
+        }
+      },
+      "ScheduleSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 240,
+            "default": 30
+          },
+          "working_hours": {
+            "type": "object",
+            "description": "Keys mon..sun; missing or empty = closed. Default Mon-Fri 09:00-17:00",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TimeWindow"
+              }
+            }
+          }
+        }
+      },
+      "Availability": {
+        "type": "object",
+        "properties": {
+          "duration_minutes": {
+            "type": "integer"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "local_time": {
+                  "type": "string",
+                  "example": "09:30"
+                },
+                "start_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      },
+      "TemplateFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "email_subject": {
+            "type": "string",
+            "maxLength": 150
+          },
+          "email_body": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Blank line = new paragraph"
+          },
+          "sms_body": {
+            "type": "string",
+            "maxLength": 600
+          }
+        },
+        "description": "Placeholders allowed: {name} {cabinet} {date} {time} {phone}. Any other curly brace is rejected."
+      },
+      "MessageOverrides": {
+        "type": "object",
+        "description": "kind -> language -> fields. Kinds: confirmation, reminder, rescheduled, cancelled. Languages: en, ro",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/components/schemas/TemplateFields"
+          }
+        }
+      },
+      "MessageOverridesInput": {
+        "type": "object",
+        "required": [
+          "overrides"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "overrides": {
+            "$ref": "#/components/schemas/MessageOverrides"
+          }
+        }
+      },
+      "MessagesConfig": {
+        "type": "object",
+        "properties": {
+          "placeholders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaults": {
+            "type": "object",
+            "description": "kind -> language -> the three built-in texts"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/MessageOverrides"
+          }
+        }
+      },
+      "MessagePreviewRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TemplateFields"
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "locale"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "confirmation",
+                  "reminder",
+                  "rescheduled",
+                  "cancelled"
+                ]
+              },
+              "locale": {
+                "type": "string",
+                "enum": [
+                  "en",
+                  "ro"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "MessagePreview": {
+        "type": "object",
+        "properties": {
+          "email_subject": {
+            "type": "string"
+          },
+          "email_html": {
+            "type": "string",
+            "description": "Complete HTML e-mail"
+          },
+          "email_text": {
+            "type": "string",
+            "description": "Plain-text alternative"
+          },
+          "sms_text": {
+            "type": "string",
+            "description": "As sent: accents folded to plain letters"
+          },
+          "sms": {
+            "type": "object",
+            "properties": {
+              "encoding": {
+                "type": "string",
+                "enum": [
+                  "GSM-7",
+                  "Unicode"
+                ]
+              },
+              "length": {
+                "type": "integer"
+              },
+              "segments": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "ApplyResult": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}

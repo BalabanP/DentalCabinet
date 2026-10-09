@@ -1,6 +1,6 @@
 # Medical Cabinet: serverless backend
 
-Python 3.11, AWS SAM. Manages visitors of a medical cabinet, appointments and clinical notes, and reminds visitors by **email (SES)** and **WhatsApp (AWS End User Messaging Social)**.
+Python 3.11, AWS SAM. Manages visitors of a medical cabinet, appointments and clinical notes, and reminds visitors by **email (SES)** and **SMS (through an Android phone running SMS Gateway for Android)**.
 
 ## Architecture
 
@@ -9,7 +9,7 @@ Client -> API Gateway HTTP API (Cognito JWT) -> ApiFunction
                                                   |- DynamoDB: Users, Patients, Appointments, Settings, Notifications
                                                   |- EventBridge Scheduler: one one-time schedule per reminder
                                                   '- SQS: immediate notices (confirmation / rescheduled / cancelled)
-EventBridge Scheduler --at(send_at)--> ReminderQueue (+DLQ, alarm) --> SenderFunction --> SES / WhatsApp
+EventBridge Scheduler --at(send_at)--> ReminderQueue (+DLQ, alarm) --> SenderFunction --> SES (email) / SMS gateway
 ```
 
 Reminders are exact one-time schedules, so there is no polling Lambda. On reschedule or cancel the old schedules are deleted. Any that survive are discarded by the sender, because it checks that the appointment is still `scheduled` at the same `start_at`.
@@ -18,7 +18,7 @@ Reminders are exact one-time schedules, so there is no polling Lambda. On resche
 
 | Table | Key | Notes |
 |---|---|---|
-| Users | `user_id`; GSI `email-index` | name, email, phone (E.164), `locale` (en/ro/ru), `notify_email` / `notify_whatsapp` consent flags |
+| Users | `user_id`; GSI `email-index` | name, email, phone (E.164), `locale` (en/ro), `notify_email` / `notify_sms` consent flags |
 | Patients | `user_id` (1:1 with user) | `notes`: free text (at most 20,000 chars). Separate table, clinician-only |
 | Appointments | `appointment_id`; GSIs `user-index`, `day-index` | `start_at` (UTC), `day` (cabinet-local date), `status`, `internal_note` (never sent), `reminders[]` |
 | Settings | `setting_id = reminders` | cabinet name/phone/timezone, channels, reminder offsets |
@@ -35,7 +35,7 @@ Reminders are exact one-time schedules, so there is no polling Lambda. On resche
   "timezone": "Europe/Bucharest",
   "send_on_booking": true,
   "send_on_change": true,
-  "channels": { "email": true, "whatsapp": true },
+  "channels": { "email": true, "sms": false },
   "reminders": [
     { "minutes_before": 4320, "enabled": true },
     { "minutes_before": 1440, "enabled": true },
@@ -67,6 +67,9 @@ All routes need `Authorization: Bearer <Cognito token>`. Roles are Cognito group
 | GET | `/availability` | staff | `?from=YYYY-MM-DD&to=` (max 14 days) `&duration_minutes=`. Free start times inside working hours, in the future, not overlapping a booking |
 | GET | `/settings/schedule` | staff | working hours and slot spacing |
 | PUT | `/settings/schedule` | admin | `{"slot_minutes": 30, "working_hours": {"mon": [{"start":"09:00","end":"17:00"}], ...}}`. Missing or empty day = closed. Default: Mon-Fri 09:00-17:00, 30-minute slots |
+| GET | `/settings/messages` | staff | Built-in message texts, plus what was customised, plus the allowed placeholders |
+| PUT | `/settings/messages` | admin | `{"overrides": {"reminder": {"ro": {"email_subject": "...", "email_body": "...", "sms_body": "..."}}}}`. Blank = built-in text. Only `{name} {cabinet} {date} {time} {phone}` may use curly braces |
+| POST | `/settings/messages/preview` | staff | Renders one message (HTML e-mail, plain text, SMS text and SMS parts) with sample data. Stores nothing |
 | GET | `/settings/reminders` | staff | |
 | PUT | `/settings/reminders` | admin | |
 | POST | `/settings/reminders/apply-to-existing` | admin | |
@@ -90,7 +93,7 @@ python local/server.py            # API on http://127.0.0.1:8000
 python local/smoke.py             # in a second terminal: creates a user, notes and an appointment
 ```
 
-This runs the real API and sender code on in-memory fake AWS (moto). Data is lost on restart. Emails and WhatsApp messages are printed in the server console instead of being sent. A background loop fires schedules when they are due, which stands in for EventBridge Scheduler. Authentication is bypassed: every request is an `admin`. To try another role, send the header `X-Dev-Groups: reception` (or `clinician`).
+This runs the real API and sender code on in-memory fake AWS (moto). Data is lost on restart. Emails and SMS are printed in the server console instead of being sent. A background loop fires schedules when they are due, which stands in for EventBridge Scheduler. Authentication is bypassed: every request is an `admin`. To try another role, send the header `X-Dev-Groups: reception` (or `clinician`).
 
 The local settings are seeded with the default reminders plus one extra **3 minutes before** reminder, so you can book a visit about 5 minutes ahead and watch a reminder arrive in about 2 minutes. Call `PUT /settings/reminders` to change them.
 
@@ -116,11 +119,10 @@ Prerequisites: AWS credentials, [SAM CLI](https://docs.aws.amazon.com/serverless
    ```
 5. **Set the cabinet name, timezone and reminders** with `PUT /settings/reminders`. Until you do, the timezone defaults to UTC.
 
-### WhatsApp setup (optional; the channel is skipped until configured)
+### SMS setup (optional; the channel is skipped until configured)
 
-1. Create or link a WhatsApp Business Account in **AWS End User Messaging Social** (needs a Meta Business account and a phone number).
-2. Create and get approved **four message templates**, in each language you use (`en`, `ro`, `ru`), named `appointment_confirmation`, `appointment_reminder`, `appointment_rescheduled`, `appointment_cancelled`. Each takes four body variables: `{{1}}` name, `{{2}}` cabinet, `{{3}}` date (`24.10.2026`), `{{4}}` time (`09:00`). Example for `appointment_reminder` (en): *"Hello {{1}}, this is a reminder of your appointment at {{2}} on {{3}} at {{4}}."*
-3. Redeploy with `WhatsAppPhoneNumberId=phone-number-id-...`.
+SMS goes out through an Android phone running the open-source app *SMS Gateway for Android*. The setup steps are
+in the root `README.md`, section "SMS through an Android phone".
 
 ### Operations
 - `DeadLetterAlarm` fires when a message fails 3 times. Set `AlarmEmail` to be notified. Inspect failures through `GET /appointments/{id}/notifications` and the CloudWatch logs.
@@ -130,7 +132,7 @@ Prerequisites: AWS credentials, [SAM CLI](https://docs.aws.amazon.com/serverless
 - DynamoDB is encrypted with a customer-managed KMS key, with point-in-time recovery on. Cognito is admin-create-only, MFA (TOTP) is on by default, and password length is at least 12.
 - Least privilege: the sender Lambda cannot read the Patients table, and messages contain only name, cabinet, date and time. Never diagnoses.
 - Logs never include request bodies, notes, emails or phone numbers.
-- Consent: `notify_email` / `notify_whatsapp` are per visitor. Make sure you have a lawful basis and record consent before messaging. `DELETE /users/{id}` supports erasure.
+- Consent: `notify_email` / `notify_sms` are per visitor. Make sure you have a lawful basis and record consent before messaging. `DELETE /users/{id}` supports erasure.
 - This repository does not make you GDPR/HIPAA compliant by itself (data-processing agreements, retention policy, audit requirements and region choice are yours to decide). Check them with your compliance contact.
 
 ## Known limits and next steps

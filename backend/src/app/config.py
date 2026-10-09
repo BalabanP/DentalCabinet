@@ -15,9 +15,6 @@ class Config:
     scheduler_group: str
     scheduler_role_arn: str
     ses_from_address: str
-    whatsapp_phone_number_id: str
-    whatsapp_meta_api_version: str
-    whatsapp_template_prefix: str
 
 
 @lru_cache
@@ -34,7 +31,4 @@ def get_config() -> Config:
         scheduler_group=e["SCHEDULER_GROUP"],
         scheduler_role_arn=e["SCHEDULER_ROLE_ARN"],
         ses_from_address=e.get("SES_FROM_ADDRESS", ""),
-        whatsapp_phone_number_id=e.get("WHATSAPP_PHONE_NUMBER_ID", ""),
-        whatsapp_meta_api_version=e.get("WHATSAPP_META_API_VERSION", "v20.0"),
-        whatsapp_template_prefix=e.get("WHATSAPP_TEMPLATE_PREFIX", "appointment_"),
     )

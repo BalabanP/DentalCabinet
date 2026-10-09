@@ -4,8 +4,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from app import services
 from app.timeutil import to_iso, utc_now
 from conftest import queued_messages, schedules
+
+
+@pytest.fixture(autouse=True)
+def _any_hour(monkeypatch):
+    """These tests book relative to "now"; working-hours rules are covered in test_availability."""
+    monkeypatch.setattr(services, "_ensure_working_hours", lambda *a, **k: None)
 
 USER = {"name": "Ana Pop", "email": "Ana@example.com", "phone": "+40712345678"}
 
@@ -17,26 +24,34 @@ class Ctx(SimpleNamespace):
     aws_request_id = "req"
 
 
-def call(method, path, body=None, groups=("admin",), query=None):
+def call_raw(method, path, body=None, groups=("admin",), query=None, headers=None, authorized=True):
     from handlers import api
 
+    context = {
+        "accountId": "1", "apiId": "x", "domainName": "x", "domainPrefix": "x",
+        "http": {"method": method, "path": path, "protocol": "HTTP/1.1", "sourceIp": "1.1.1.1", "userAgent": "t"},
+        "requestId": "r", "routeKey": "$default", "stage": "$default", "time": "", "timeEpoch": 0,
+    }
+    if authorized:  # a browser pre-check (OPTIONS) arrives without any token, so without claims
+        context["authorizer"] = {
+            "jwt": {"claims": {"sub": "staff-1", "cognito:groups": "[" + " ".join(groups) + "]"}, "scopes": None}
+        }
     event = {
         "version": "2.0",
         "routeKey": "$default",
         "rawPath": path,
         "rawQueryString": "",
-        "headers": {"content-type": "application/json"},
+        "headers": {"content-type": "application/json", **(headers or {})},
         "queryStringParameters": query,
-        "requestContext": {
-            "accountId": "1", "apiId": "x", "domainName": "x", "domainPrefix": "x",
-            "http": {"method": method, "path": path, "protocol": "HTTP/1.1", "sourceIp": "1.1.1.1", "userAgent": "t"},
-            "requestId": "r", "routeKey": "$default", "stage": "$default", "time": "", "timeEpoch": 0,
-            "authorizer": {"jwt": {"claims": {"sub": "staff-1", "cognito:groups": "[" + " ".join(groups) + "]"}, "scopes": None}},
-        },
+        "requestContext": context,
         "body": json.dumps(body) if body is not None else None,
         "isBase64Encoded": False,
     }
-    res = api.handler(event, Ctx())
+    return api.handler(event, Ctx())
+
+
+def call(method, path, body=None, groups=("admin",), query=None):
+    res = call_raw(method, path, body, groups, query)
     return res["statusCode"], (json.loads(res["body"]) if res.get("body") else None)
 
 
@@ -64,8 +79,8 @@ def test_user_crud(aws):
     assert call("GET", "/users", query={"email": "ANA@example.com"})[1]["items"][0]["user_id"] == user["user_id"]
     assert len(call("GET", "/users")[1]["items"]) == 1
 
-    status, updated = call("PATCH", f"/users/{user['user_id']}", {"phone": "+40799999999", "notify_whatsapp": False})
-    assert status == 200 and updated["phone"] == "+40799999999" and updated["notify_whatsapp"] is False
+    status, updated = call("PATCH", f"/users/{user['user_id']}", {"phone": "+40799999999", "notify_sms": False})
+    assert status == 200 and updated["phone"] == "+40799999999" and updated["notify_sms"] is False
 
     assert call("PATCH", "/users/unknown", {"name": "X"})[0] == 404
 
@@ -228,3 +243,39 @@ def test_delete_user_blocked_by_upcoming_appointments(aws):
     assert call("GET", f"/users/{uid}")[0] == 404
     from app import repositories as repo
     assert repo.get_patient(uid) is None
+
+
+def test_sms_channel_and_consent_flags(aws):
+    user = make_user()
+    assert user["notify_sms"] is True  # visitors consent by default; the channel itself is off until enabled
+
+    status, updated = call("PATCH", f"/users/{user['user_id']}", {"notify_sms": False})
+    assert status == 200 and updated["notify_sms"] is False
+
+    assert call("GET", "/settings/reminders")[1]["channels"]["sms"] is False  # off by default
+    cfg = call("GET", "/settings/reminders")[1]
+    cfg["channels"]["sms"] = True
+    assert call("PUT", "/settings/reminders", cfg)[0] == 200
+    assert call("GET", "/settings/reminders")[1]["channels"]["sms"] is True
+
+
+def test_settings_saved_before_whatsapp_was_removed_still_load(aws):
+    """Old stored settings contain channels.whatsapp (and notify_whatsapp on visitors); they must not break."""
+    from app import clients, repositories as repo
+    from app.config import get_config
+
+    clients.table(get_config().settings_table).put_item(Item={
+        "setting_id": "reminders",
+        "config": {"cabinet_name": "Old", "timezone": "Europe/Bucharest", "send_on_booking": True, "send_on_change": True,
+                   "channels": {"email": True, "whatsapp": True}, "reminders": [{"minutes_before": 1440, "enabled": True}]},
+    })
+    status, cfg = call("GET", "/settings/reminders")
+    assert status == 200 and cfg["channels"] == {"email": True, "sms": False}  # unknown key dropped, sms defaults off
+
+    # an old UI that still sends whatsapp in a save does not fail either
+    assert call("PUT", "/settings/reminders", {**cfg, "channels": {"email": True, "whatsapp": True, "sms": True}})[0] == 200
+    assert call("GET", "/settings/reminders")[1]["channels"] == {"email": True, "sms": True}
+
+    # visitors are no longer given a whatsapp flag, and sending one is rejected
+    assert call("POST", "/users", {**USER, "notify_whatsapp": True})[0] == 422
+    assert "notify_whatsapp" not in make_user(email="new@example.com")

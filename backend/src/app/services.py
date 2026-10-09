@@ -46,6 +46,19 @@ def _ensure_free(start: datetime, minutes: int, tz: ZoneInfo, exclude_id: str | 
         raise Conflict("this time overlaps another appointment (use allow_overlap to override)")
 
 
+def _ensure_working_hours(start: datetime, minutes: int, tz: ZoneInfo) -> None:
+    """The whole visit must fit inside one working-hours window of the cabinet's local day."""
+    local = start.astimezone(tz)
+    end = local + timedelta(minutes=minutes)
+    if end.date() == local.date():
+        day = WEEKDAYS[local.weekday()]
+        begin, finish = local.strftime("%H:%M"), end.strftime("%H:%M")
+        for window in repo.get_schedule_settings().working_hours.get(day, []):
+            if window.start <= begin and finish <= window.end:
+                return
+    raise BadRequest("this time is outside working hours")
+
+
 def free_slots(date_from: str, date_to: str | None, duration_minutes: int | None) -> dict:
     """Start times inside working hours that are in the future and do not overlap a booking."""
     schedule = repo.get_schedule_settings()
@@ -92,6 +105,7 @@ def book(data: AppointmentIn) -> dict:
     start = to_utc(data.start_at, settings.tz)
     if start <= now:
         raise BadRequest("start_at must be in the future")
+    _ensure_working_hours(start, data.duration_minutes, settings.tz)
     if not data.allow_overlap:
         _ensure_free(start, data.duration_minutes, settings.tz)
 
@@ -154,8 +168,10 @@ def update(appointment_id: str, patch: AppointmentPatch) -> dict:
         start = to_utc(fields["start_at"], settings.tz)
         if start <= now:
             raise BadRequest("start_at must be in the future")
+        minutes = fields.get("duration_minutes") or appt["duration_minutes"]
+        _ensure_working_hours(start, minutes, settings.tz)
         if not allow_overlap:
-            _ensure_free(start, fields.get("duration_minutes") or appt["duration_minutes"], settings.tz, appointment_id)
+            _ensure_free(start, minutes, settings.tz, appointment_id)
         if to_iso(start) != appt["start_at"]:
             new_reminders = reminders.create_schedules(
                 appointment_id, start, reminders.plan_reminders(start, settings.reminders, now)
