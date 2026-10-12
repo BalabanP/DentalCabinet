@@ -14,6 +14,7 @@ import type {
   ScheduleSettings,
   User,
   UserInput,
+  SmsReply,
 } from "./types";
 
 export class ApiError extends Error {
@@ -102,6 +103,9 @@ export const api = {
     body: { start_at?: string; duration_minutes?: number; internal_note?: string; status?: "completed" | "no_show"; allow_overlap?: boolean },
   ) => request<Appointment>("PATCH", `/appointments/${id}`, { body }),
   cancelAppointment: (id: string) => request<Appointment>("POST", `/appointments/${id}/cancel`),
+  confirmAppointment: (id: string) => request<Appointment>("POST", `/appointments/${id}/confirm`),
+  listReplies: () => request<{ items: SmsReply[] }>("GET", "/sms-replies").then((r) => r.items),
+  dismissReply: (id: string) => request<void>("DELETE", `/sms-replies/${id}`),
   listNotifications: (id: string) =>
     request<{ items: NotificationRecord[] }>("GET", `/appointments/${id}/notifications`).then((r) => r.items),
   availability: (from: string, durationMinutes?: number) =>

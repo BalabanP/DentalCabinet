@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import type { Appointment } from "../types";
 import {
   Banner,
+  ConfirmBadge,
   ConfirmDialog,
   Field,
   humanMinutes,
@@ -46,7 +47,7 @@ export default function AppointmentDialog({
   const active = appointment.status === "scheduled";
   const moved = date !== initial.date || time !== initial.time;
 
-  const apply = (action: () => Promise<Appointment>, successKey: "appt.moved" | "appt.updated" | "appt.cancelled") =>
+  const apply = (action: () => Promise<Appointment>, successKey: "appt.moved" | "appt.updated" | "appt.cancelled" | "appt.markedConfirmed") =>
     run(async () => {
       try {
         const updated = await action();
@@ -76,6 +77,27 @@ export default function AppointmentDialog({
           </div>
           <StatusBadge status={appointment.status} />
         </div>
+        {appointment.cancelled_via === "sms" && <Banner kind="info">{t("appt.cancelledSms")}</Banner>}
+        {active && (
+          <div className="confirm-row">
+            <ConfirmBadge appointment={appointment} tz={timezone} />
+            {appointment.confirmed_at ? (
+              <span className="muted small">
+                {t(appointment.confirmed_via === "sms" ? "appt.confirmedSms" : "appt.confirmedStaff", {
+                  when: dateTime(appointment.confirmed_at, timezone),
+                })}
+              </span>
+            ) : (
+              <button
+                className="btn small"
+                disabled={busy}
+                onClick={() => apply(() => api.confirmAppointment(appointment.appointment_id), "appt.markedConfirmed")}
+              >
+                {t("appt.markConfirmed")}
+              </button>
+            )}
+          </div>
+        )}
         {visitor && (
           <p className="small">
             <Link to={`/visitors/${visitor.user_id}`} onClick={onClose}>

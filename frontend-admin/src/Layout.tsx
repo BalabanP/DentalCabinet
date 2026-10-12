@@ -1,4 +1,7 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { api } from "./api";
+import { REPLIES_CHANGED } from "./components/RepliesInbox";
 import { useData } from "./data";
 import { useI18n } from "./i18n";
 import type { Lang } from "./i18n";
@@ -7,6 +10,18 @@ import { Banner } from "./ui";
 export default function Layout({ onSignOut }: { onSignOut?: () => void }) {
   const { t, lang, setLang } = useI18n();
   const { reminders, loadError } = useData();
+
+  // A red dot on "Messages" while visitor replies are waiting for someone to read them.
+  const [waiting, setWaiting] = useState(0);
+  const location = useLocation();
+  const refreshWaiting = useCallback(() => {
+    api.listReplies().then((r) => setWaiting(r.length)).catch(() => undefined);
+  }, []);
+  useEffect(refreshWaiting, [refreshWaiting, location.pathname]);
+  useEffect(() => {
+    window.addEventListener(REPLIES_CHANGED, refreshWaiting);
+    return () => window.removeEventListener(REPLIES_CHANGED, refreshWaiting);
+  }, [refreshWaiting]);
 
   const link = ({ isActive }: { isActive: boolean }) => (isActive ? "active" : "");
 
@@ -32,6 +47,7 @@ export default function Layout({ onSignOut }: { onSignOut?: () => void }) {
           <NavLink to="/messages" className={link}>
             <span className="ico" aria-hidden="true">✉</span>
             <span className="lbl">{t("nav.messages")}</span>
+            {waiting > 0 && <span className="count-dot">{waiting}</span>}
           </NavLink>
           <NavLink to="/settings" className={link}>
             <span className="ico" aria-hidden="true">⚙</span>

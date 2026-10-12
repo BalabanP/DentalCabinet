@@ -138,6 +138,56 @@ reminder due -> Sender Lambda -> api.sms-gate.app (cloud API) -> your phone -> S
 - The text (visitor name, cabinet, date, time; never medical notes) passes through the gateway's cloud service, a free community service whose uptime is not guaranteed. The app supports a self-hosted "private server" if you ever want that.
 - Local development prints SMS in the backend console instead of sending anything.
 
+### Visitors answering by SMS (CONFIRM / CANCEL)
+
+The reminder SMS ends with "Reply CONFIRM or CANCEL." (Romanian: "Raspundeti CONFIRM sau ANULEAZA."). When the phone receives
+the answer, the gateway app calls a web address of your backend (a *webhook*):
+
+```
+visitor replies -> your phone -> SMS Gateway app -> POST /webhooks/sms/<secret> -> backend
+```
+
+| The visitor sends | What happens |
+|---|---|
+| CONFIRM, DA, OK, YES, CONFIRMAT | The visit is marked **confirmed** (green tick in the calendar, agenda and visit window). |
+| CANCEL, ANULEAZA, ANULEZ | The visit is **cancelled**, the slot is free again and the visitor gets the usual cancellation message. |
+| Anything else, a longer message, or a number not in the visitor list | Nothing changes. It appears in **Messages, Replies that need attention** (and a red number on the Messages tab) for staff. |
+| A reply from a visitor with **two or more** upcoming visits | Not guessed. It goes to the same list. |
+
+A visit that is today or tomorrow and still unconfirmed shows an amber **?** in the calendar and "Awaiting confirmation" in the agenda.
+Moving a visit to another time clears its confirmation. Staff can also press **Mark as confirmed** in the visit window (for example after a phone call).
+"No" / "Nu" alone are not treated as CANCEL (it may mean "move it"), so staff read those.
+
+**Set up (once, after the SMS gateway works)**
+1. Make a secret and store it next to the gateway login (name `/<stack name>/sms-webhook`):
+   ```powershell
+   $b = New-Object byte[] 24; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b)
+   $token = ([BitConverter]::ToString($b) -replace '-','').ToLower()
+   (@{ token = $token } | ConvertTo-Json -Compress) | Set-Content $env:TEMP\hook.json -Encoding ascii
+   aws ssm put-parameter --name "/medical-cabinet-dev/sms-webhook" --type SecureString --value file://$env:TEMP/hook.json --overwrite --region eu-central-1
+   Remove-Item $env:TEMP\hook.json
+   ```
+2. Deploy (`sam build`, `sam deploy`). The API URL is in the stack outputs.
+3. Tell the gateway where to send received SMS (use your own login and API URL):
+   ```powershell
+   $url = "https://YOUR-API-ID.execute-api.eu-central-1.amazonaws.com/webhooks/sms/$token"
+   (@{ url = $url; event = "sms:received" } | ConvertTo-Json -Compress) | Set-Content $env:TEMP\wh.json -Encoding ascii
+   curl.exe -u "USERNAME:PASSWORD" -H "Content-Type: application/json" -d "@$env:TEMP\wh.json" https://api.sms-gate.app/3rdparty/v1/webhooks
+   Remove-Item $env:TEMP\wh.json
+   ```
+   List them with `curl.exe -u "USERNAME:PASSWORD" https://api.sms-gate.app/3rdparty/v1/webhooks`.
+4. Send a reminder to your own number, reply CONFIRM, and check the visit in the calendar.
+
+**Good to know**
+- The secret in the URL is what protects the endpoint; anyone without it gets "not found". Keep the URL private.
+  The gateway can also sign requests (app: Settings, Webhooks, Signing Key). Only add `"signing_key"` to the parameter
+  if you know your gateway mode signs, because once it is set every unsigned call is refused.
+- The gateway retries for about two days until it gets an answer. Each message is applied once.
+- The text of a reply is stored only when staff need to read it, for 90 days. Replies that were applied (CONFIRM / CANCEL) are not stored.
+- Without step 1 the endpoint answers "not found" and nothing is read; everything else keeps working.
+- Locally: `python local\server.py 8000 --seed` prints a PowerShell line that fakes a visitor's CONFIRM.
+- Reminder texts you customised in the admin UI keep your wording. Add the reply sentence yourself if you want it.
+
 ## Cost switches (all off by default)
 | Parameter | Turns on | Costs |
 |---|---|---|

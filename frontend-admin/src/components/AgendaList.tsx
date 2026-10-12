@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useData } from "../data";
 import { useI18n } from "../i18n";
 import type { Appointment } from "../types";
-import { Spinner, StatusBadge, localParts, todayInZone, useErrorText, useNotice } from "../ui";
+import { ConfirmBadge, Spinner, StatusBadge, localParts, todayInZone, useErrorText, useNotice } from "../ui";
 
 const STEP_DAYS = 14;
 const MAX_DAYS = 60; // the server limits a range to 62 days
@@ -81,7 +81,7 @@ export default function AgendaList({
             const user = userById(a.user_id);
             const end = new Date(Date.parse(a.start_at) + a.duration_minutes * 60000).toISOString();
             return (
-              <button key={a.appointment_id} className={`agenda-item status-${a.status}`} onClick={() => onOpen(a)}>
+              <button key={a.appointment_id} className={`agenda-item status-${a.status} ${a.confirmed_at ? "is-confirmed" : ""}`} onClick={() => onOpen(a)}>
                 <span className="agenda-time">
                   <strong>{time(a.start_at, timezone)}</strong>
                   <span className="muted small">{time(end, timezone)}</span>
@@ -93,7 +93,11 @@ export default function AgendaList({
                     {user?.phone ? ` · ${user.phone}` : ""}
                   </span>
                 </span>
-                {a.status !== "scheduled" && <StatusBadge status={a.status} />}
+                {a.status !== "scheduled" ? (
+                  <StatusBadge status={a.status} />
+                ) : (
+                  <ConfirmBadge appointment={a} tz={timezone} />
+                )}
               </button>
             );
           })}

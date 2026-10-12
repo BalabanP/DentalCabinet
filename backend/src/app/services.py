@@ -177,6 +177,8 @@ def update(appointment_id: str, patch: AppointmentPatch) -> dict:
                 appointment_id, start, reminders.plan_reminders(start, settings.reminders, now)
             )
             changes.update(start_at=to_iso(start), day=local_day(start, settings.tz), reminders=new_reminders)
+            if appt.get("confirmed_at"):  # the visitor agreed to the old time, not the new one
+                changes.update(confirmed_at=None, confirmed_via=None)
             if settings.send_on_change:
                 notice_start = start
     elif "duration_minutes" in fields and appt["status"] == "scheduled" and not allow_overlap:
@@ -198,14 +200,27 @@ def update(appointment_id: str, patch: AppointmentPatch) -> dict:
     return saved
 
 
-def cancel(appointment_id: str) -> dict:
+def confirm(appointment_id: str, via: str) -> dict:
+    """The visitor (or staff) confirmed they will come. Idempotent."""
+    appt = _get_or_404(appointment_id)
+    if appt["status"] != "scheduled":
+        raise Conflict(f"cannot confirm an appointment that is {appt['status']}")
+    if appt.get("confirmed_at"):
+        return appt
+    return repo.update_appointment(appointment_id, {"confirmed_at": to_iso(utc_now()), "confirmed_via": via})
+
+
+def cancel(appointment_id: str, via: str | None = None) -> dict:
     appt = _get_or_404(appointment_id)
     if appt["status"] == "cancelled":
         return appt
     if appt["status"] != "scheduled":
         raise Conflict(f"cannot cancel an appointment that is {appt['status']}")
 
-    saved = repo.update_appointment(appointment_id, {"status": "cancelled", "reminders": []})
+    changes: dict = {"status": "cancelled", "reminders": []}
+    if via:
+        changes["cancelled_via"] = via
+    saved = repo.update_appointment(appointment_id, changes)
     reminders.delete_schedules(appt.get("reminders", []))
 
     start = parse_iso(appt["start_at"])

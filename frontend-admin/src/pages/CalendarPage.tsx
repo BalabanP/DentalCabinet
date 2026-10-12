@@ -15,7 +15,7 @@ import { useData } from "../data";
 import { useI18n } from "../i18n";
 import type { Appointment, Weekday } from "../types";
 import { WEEKDAYS } from "../types";
-import { Banner, ConfirmDialog, Toggle, useErrorText, useMediaQuery, useNotice } from "../ui";
+import { Banner, ConfirmDialog, Toggle, confirmState, useErrorText, useMediaQuery, useNotice } from "../ui";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const toDuration = (minutes: number) => `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}:00`;
@@ -87,21 +87,24 @@ export default function CalendarPage() {
         const items = await api.listAppointments(info.startStr.slice(0, 10), dayBefore(info.endStr.slice(0, 10)));
         return items
           .filter((a) => showCancelled || a.status !== "cancelled")
-          .map((a) => ({
+          .map((a) => {
+            const state = confirmState(a, timezone);
+            return {
             id: a.appointment_id,
-            title: userById(a.user_id)?.name ?? "…",
+            title: `${state === "confirmed" ? "✓ " : state === "awaiting" ? "? " : ""}${userById(a.user_id)?.name ?? "…"}`,
             start: a.start_at,
             end: new Date(Date.parse(a.start_at) + a.duration_minutes * 60000).toISOString(),
-            classNames: [`fc-status-${a.status}`],
+            classNames: [`fc-status-${a.status}`, ...(state ? [`fc-${state}`] : [])],
             editable: a.status === "scheduled",
             extendedProps: { appt: a },
-          }));
+            };
+          });
       } catch (err) {
         notify("error", errorText(err));
         return [];
       }
     },
-    [usersLoaded, showCancelled, userById, notify, errorText],
+    [usersLoaded, showCancelled, userById, timezone, notify, errorText],
   );
 
   const onSelect = (info: DateSelectArg) => {

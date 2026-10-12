@@ -43,6 +43,9 @@
     },
     {
       "name": "Settings"
+    },
+    {
+      "name": "Replies"
     }
   ],
   "paths": {
@@ -1019,6 +1022,203 @@
         }
       }
     },
+    "/appointments/{appointment_id}/confirm": {
+      "post": {
+        "summary": "Mark an appointment as confirmed, e.g. after a phone call (staff, idempotent)",
+        "tags": [
+          "Appointments"
+        ],
+        "operationId": "confirmAppointment",
+        "responses": {
+          "200": {
+            "description": "Confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Appointment"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "appointment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/sms-replies": {
+      "get": {
+        "summary": "Visitor SMS answers the app could not apply by itself (staff)",
+        "tags": [
+          "Replies"
+        ],
+        "operationId": "listSmsReplies",
+        "responses": {
+          "200": {
+            "description": "Replies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmsReplyList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/sms-replies/{reply_id}": {
+      "delete": {
+        "summary": "Dismiss one reply once someone has read it (staff)",
+        "tags": [
+          "Replies"
+        ],
+        "operationId": "dismissSmsReply",
+        "responses": {
+          "204": {
+            "description": "Dismissed"
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "reply_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/webhooks/sms/{token}": {
+      "post": {
+        "summary": "Called by the SMS Gateway app when a visitor's SMS arrives. No login: the secret in the URL (and the optional signature) is the protection",
+        "tags": [
+          "Replies"
+        ],
+        "operationId": "smsWebhook",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmsWebhookEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted. Any 2xx stops the gateway's retries, also for events that are ignored"
+          },
+          "404": {
+            "description": "Wrong secret, or the webhook is not set up"
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
     "/availability": {
       "get": {
         "summary": "Free appointment start times within working hours (staff)",
@@ -1829,6 +2029,27 @@
           "internal_note": {
             "type": "string"
           },
+          "confirmed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set when the visitor confirmed by SMS or staff marked it. Cleared when the visit is moved"
+          },
+          "confirmed_via": {
+            "type": "string",
+            "enum": [
+              "sms",
+              "staff"
+            ],
+            "nullable": true
+          },
+          "cancelled_via": {
+            "type": "string",
+            "enum": [
+              "sms"
+            ],
+            "nullable": true
+          },
           "reminders": {
             "type": "array",
             "items": {
@@ -1842,6 +2063,84 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SmsReply": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "received_at": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "unknown_sender",
+              "unrecognised",
+              "no_upcoming",
+              "several_upcoming"
+            ]
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "user_name": {
+            "type": "string"
+          }
+        }
+      },
+      "SmsReplyList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SmsReply"
+            }
+          }
+        }
+      },
+      "SmsWebhookEvent": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "example": "sms:received"
+          },
+          "id": {
+            "type": "string"
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "properties": {
+              "messageId": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "sender": {
+                "type": "string"
+              },
+              "recipient": {
+                "type": "string"
+              },
+              "receivedAt": {
+                "type": "string"
+              }
+            }
           }
         }
       },

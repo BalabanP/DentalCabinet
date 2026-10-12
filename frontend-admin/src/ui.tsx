@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { ApiError } from "./api";
 import { useI18n } from "./i18n";
 import type { Key } from "./i18n";
+import type { Appointment } from "./types";
 
 // ---------- notices (toasts) ----------
 
@@ -196,6 +197,25 @@ export function useMediaQuery(query: string): boolean {
     return () => mq.removeEventListener("change", onChange);
   }, [query]);
   return matches;
+}
+
+/** Confirmed by the visitor, or still waiting for an answer while the visit is today or tomorrow. */
+export function confirmState(a: Appointment, tz: string): "confirmed" | "awaiting" | null {
+  if (a.status !== "scheduled") return null;
+  if (a.confirmed_at) return "confirmed";
+  if (Date.parse(a.start_at) <= Date.now()) return null;
+  return localParts(a.start_at, tz).date <= todayInZone(tz, 1) ? "awaiting" : null;
+}
+
+export function ConfirmBadge({ appointment, tz }: { appointment: Appointment; tz: string }) {
+  const { t } = useI18n();
+  const state = confirmState(appointment, tz);
+  if (!state) return null;
+  return state === "confirmed" ? (
+    <span className="badge confirm-yes">✓ {t("appt.confirmed")}</span>
+  ) : (
+    <span className="badge confirm-wait">? {t("appt.awaiting")}</span>
+  );
 }
 
 // ---------- small helpers ----------

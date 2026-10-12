@@ -49,8 +49,8 @@ SMS_TEXTS = {
         "ro": "{cabinet}: programarea dvs. este confirmata pe {date}, ora {time}.",
     },
     "reminder": {
-        "en": "{cabinet}: reminder of your appointment on {date} at {time}.",
-        "ro": "{cabinet}: va reamintim programarea din {date}, ora {time}.",
+        "en": "{cabinet}: reminder of your appointment on {date} at {time}. Reply CONFIRM or CANCEL.",
+        "ro": "{cabinet}: va reamintim programarea din {date}, ora {time}. Raspundeti CONFIRM sau ANULEAZA.",
     },
     "rescheduled": {
         "en": "{cabinet}: your appointment was moved to {date} at {time}.",

@@ -329,3 +329,58 @@ def finish_notification(
     if error:
         changes["error"] = error[:300]
     _update(_notifications(), {"appointment_id": appointment_id, "sk": sk}, changes, "appointment_id")
+
+
+# ---------- visitor SMS replies ----------
+# Stored in the notifications table under fixed partition keys, so no new table is needed:
+#   "INBOUND" / <gateway message id>  marks a webhook delivery as processed (the gateway retries)
+#   "INBOX"   / <random id>           a reply that a person at reception should read
+
+REPLY_RETENTION_DAYS = 90
+_PHONE_TAIL = 9  # compare the last 9 digits, so "+40 712 345 678" and "0712345678" are the same number
+
+
+def find_users_by_phone(phone: str) -> list[dict]:
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) < _PHONE_TAIL:
+        return []
+    found: list[dict] = []
+    kwargs: dict = {}
+    while True:
+        res = _users().scan(**kwargs)
+        found.extend(u for u in clean(res["Items"]) if re.sub(r"\D", "", u["phone"])[-_PHONE_TAIL:] == digits[-_PHONE_TAIL:])
+        if "LastEvaluatedKey" not in res:
+            return found
+        kwargs["ExclusiveStartKey"] = res["LastEvaluatedKey"]
+
+
+def claim_inbound(message_id: str) -> bool:
+    """True the first time a gateway message id is seen."""
+    ttl = int((utc_now() + timedelta(days=7)).timestamp())
+    try:
+        _notifications().put_item(
+            Item={"appointment_id": "INBOUND", "sk": message_id[:100], "ttl": ttl},
+            ConditionExpression="attribute_not_exists(sk)",
+        )
+    except ClientError as exc:
+        if _is_conditional_failure(exc):
+            return False
+        raise
+    return True
+
+
+def add_reply(item: dict) -> dict:
+    ttl = int((utc_now() + timedelta(days=REPLY_RETENTION_DAYS)).timestamp())
+    saved = {"appointment_id": "INBOX", "sk": uuid.uuid4().hex, "ttl": ttl, **{k: v for k, v in item.items() if v is not None}}
+    _notifications().put_item(Item=saved)
+    return saved
+
+
+def list_replies() -> list[dict]:
+    items = _query_all(_notifications(), KeyConditionExpression=Key("appointment_id").eq("INBOX"))
+    out = [{"id": i["sk"], **{k: v for k, v in i.items() if k not in ("appointment_id", "sk", "ttl")}} for i in items]
+    return sorted(out, key=lambda r: r["received_at"], reverse=True)
+
+
+def dismiss_reply(reply_id: str) -> None:
+    _notifications().delete_item(Key={"appointment_id": "INBOX", "sk": reply_id})

@@ -1,5 +1,6 @@
 """HTTP API (API Gateway v2 + Cognito JWT authorizer) for users, patients, appointments and settings."""
 
+import base64
 import json
 import re
 from datetime import datetime, timedelta
@@ -9,7 +10,7 @@ import os
 from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, CORSConfig, Response, content_types
 from pydantic import ValidationError
 
-from app import notifications, repositories as repo, services
+from app import notifications, replies, repositories as repo, services
 from app.errors import AppError, BadRequest, Forbidden, NotFound
 from app.log import logger
 from app.models import (
@@ -237,12 +238,63 @@ def cancel_appointment(appointment_id: str):
     return services.cancel(appointment_id)
 
 
+@app.post("/appointments/<appointment_id>/confirm")
+def confirm_appointment(appointment_id: str):
+    """Staff mark a visit confirmed, e.g. after a phone call."""
+    require(STAFF)
+    return services.confirm(appointment_id, via="staff")
+
+
 @app.get("/appointments/<appointment_id>/notifications")
 def appointment_notifications(appointment_id: str):
     require(STAFF)
     if not repo.get_appointment(appointment_id):
         raise NotFound("appointment not found")
     return {"items": repo.list_notifications(appointment_id)}
+
+
+# ---------- visitor SMS replies ----------
+
+
+@app.post("/webhooks/sms/<token>")
+def sms_webhook(token: str):
+    """Called by the SMS gateway app when the phone receives an SMS. No login: the secret in the URL and the
+    gateway's HMAC signature protect it. Answers 404 to anyone who does not know the secret."""
+    cfg = replies.webhook_config()
+    event = app.current_event
+    raw = event.body or ""
+    body = base64.b64decode(raw) if event.is_base64_encoded else raw.encode()
+    if not cfg or not replies.authentic(
+        cfg,
+        token,
+        body,
+        event.get_header_value("x-signature", case_sensitive=False),
+        event.get_header_value("x-timestamp", case_sensitive=False),
+    ):
+        return _json(404, {"message": "not found"})
+
+    data = json.loads(body or b"{}")
+    if data.get("event") == "sms:received":
+        payload = data.get("payload") or {}
+        message_id = str(payload.get("messageId") or data.get("id") or "")
+        if message_id and payload.get("sender"):
+            replies.handle_incoming(
+                str(payload["sender"]), str(payload.get("message") or ""), message_id, payload.get("receivedAt")
+            )
+    return _json(200, {"ok": True})  # any 2xx stops the gateway's retries, including for events we ignore
+
+
+@app.get("/sms-replies")
+def list_sms_replies():
+    require(STAFF)
+    return {"items": repo.list_replies()}
+
+
+@app.delete("/sms-replies/<reply_id>")
+def dismiss_sms_reply(reply_id: str):
+    require(STAFF)
+    repo.dismiss_reply(reply_id)
+    return Response(status_code=204, body="")
 
 
 # ---------- availability ----------

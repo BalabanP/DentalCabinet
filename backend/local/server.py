@@ -242,6 +242,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     port = int(args[0]) if args else 8000
+    os.environ.setdefault("SMS_WEBHOOK_TOKEN", "local-dev-token-0123456789")  # lets you fake a visitor's SMS reply
     mock = mock_aws()
     mock.start()
     create_tables()
@@ -254,6 +255,13 @@ def main() -> None:
     threading.Thread(target=scheduler_loop, daemon=True).start()
     threading.Thread(target=sender_loop, daemon=True).start()
     print(f"Local API on http://127.0.0.1:{port}  (fake AWS, in-memory; Ctrl+C to stop)", flush=True)
+    body = '{"event":"sms:received","payload":{"messageId":"t1","sender":"+40712345001","message":"CONFIRM"}}'
+    print("Pretend a visitor replied (a seeded visitor's phone is +40712345001):", flush=True)
+    print(
+        f"  Invoke-RestMethod -Method Post -Uri http://127.0.0.1:{port}/webhooks/sms/{os.environ['SMS_WEBHOOK_TOKEN']} "
+        f"-ContentType application/json -Body '{body}'\n",
+        flush=True,
+    )
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 

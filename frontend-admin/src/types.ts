@@ -25,6 +25,9 @@ export type Appointment = {
   duration_minutes: number;
   status: AppointmentStatus;
   internal_note?: string;
+  confirmed_at?: string | null; // the visitor (or staff) confirmed the visit
+  confirmed_via?: "sms" | "staff" | null;
+  cancelled_via?: "sms" | null;
   reminders: ScheduledReminder[];
   created_at: string;
   updated_at: string;
@@ -80,4 +83,15 @@ export type MessagePreview = {
   email_text: string;
   sms_text: string;
   sms: { encoding: string; length: number; segments: number };
+};
+
+/** An SMS answer from a visitor that the app could not act on by itself. */
+export type SmsReply = {
+  id: string;
+  sender: string;
+  text: string;
+  received_at: string;
+  reason: "unknown_sender" | "unrecognised" | "no_upcoming" | "several_upcoming";
+  user_id?: string;
+  user_name?: string;
 };

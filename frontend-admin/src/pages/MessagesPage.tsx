@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import NotificationsTable from "../components/NotificationsTable";
+import RepliesInbox from "../components/RepliesInbox";
 import { useData } from "../data";
 import { useI18n } from "../i18n";
 import type { Appointment } from "../types";
@@ -35,6 +36,7 @@ export default function MessagesPage() {
 
   return (
     <div className="page">
+      <RepliesInbox />
       <div className="page-head">
         <h1>{t("log.title")}</h1>
         <div className="head-actions">

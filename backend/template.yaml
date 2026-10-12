@@ -265,15 +265,23 @@ Resources:
     Properties:
       Handler: handlers.api.handler
       Description: REST API for users, patients, appointments and reminder settings.
+      Environment:
+        Variables:
+          # SecureString created by hand (see README): {"token": "<random>", "signing_key": "<optional>"}
+          SMS_WEBHOOK_PARAMETER: !Sub /${AWS::StackName}/sms-webhook
       Policies:
         - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
         - DynamoDBCrudPolicy: { TableName: !Ref PatientsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref AppointmentsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref SettingsTable }
-        - DynamoDBReadPolicy: { TableName: !Ref NotificationsTable }
+        # Crud (not Read): visitor SMS replies and their de-duplication records live in this table.
+        - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
         - SQSSendMessagePolicy: { QueueName: !GetAtt ReminderQueue.QueueName }
         - Version: "2012-10-17"
           Statement:
+            - Effect: Allow
+              Action: ssm:GetParameter
+              Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${AWS::StackName}/sms-webhook
             - !If
               - UseKey
               - Effect: Allow
@@ -296,6 +304,16 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /{proxy+}
             Method: ANY
+        # The SMS gateway app calls this when a visitor replies. It cannot log in, so no authorizer:
+        # the Lambda checks the secret in the URL (and the gateway's signature) itself.
+        SmsWebhook:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /webhooks/sms/{token}
+            Method: POST
+            Auth:
+              Authorizer: NONE
         # Browsers send an unauthenticated OPTIONS "pre-check" before any call that carries a token.
         # Without this route the catch-all above would demand a login for it and every call would fail
         # with a CORS error. This route has no authorizer; the Lambda answers it with the CORS headers.

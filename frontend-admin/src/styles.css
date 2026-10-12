@@ -391,6 +391,24 @@ tr.expanded td { background: var(--surface-2); cursor: default; }
   .calendar-wrap:has(.fc-timeGridWeek-view) .fc { min-width: 640px; }
 }
 
+/* ---------- confirmations and visitor replies ---------- */
+.badge.confirm-yes { background: var(--ok-soft); color: var(--completed); }
+.badge.confirm-wait { background: var(--warn-soft); color: var(--warn); }
+.confirm-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.calendar-wrap .fc-awaiting { --fc-event-bg-color: var(--no-show); --fc-event-border-color: var(--no-show); }
+.agenda-item.status-scheduled:not(.is-confirmed) { border-left-color: var(--scheduled); }
+.agenda-item.is-confirmed { border-left-color: var(--completed); }
+.count-dot { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; }
+.sidebar nav a { position: relative; }
+.sidebar nav a .count-dot { margin-left: auto; }
+.replies { border-color: var(--warn); }
+.reply { padding: 10px 0; border-top: 1px solid var(--border); }
+.reply-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.reply blockquote { margin: 6px 0; padding: 8px 12px; background: var(--surface-2); border-radius: 10px; overflow-wrap: anywhere; white-space: pre-wrap; }
+@media (max-width: 820px) {
+  .sidebar nav a .count-dot { position: absolute; top: 4px; right: calc(50% - 26px); margin: 0; min-width: 18px; height: 18px; font-size: 11px; }
+}
+
 /* ---------- message text editor ---------- */
 .editor { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 .row2.equal { grid-template-columns: 1fr 1fr; }
