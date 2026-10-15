@@ -214,3 +214,13 @@ def test_sms_gateway_login_failure_is_logged_as_http_code_and_retried(provider, 
     sender.process(msg)  # SQS retry: only the failed channel is sent again
     assert len(provider.emails) == 1 and len(provider.smss) == 1
     assert statuses(appt)["sms"] == "sent"
+
+
+def test_reminder_sms_stops_asking_once_the_visit_is_confirmed(provider, appt):
+    enable_sms()
+    sender.process(reminder_msg(appt))
+    assert "CONFIRM" in provider.smss[0][1].sms  # not confirmed yet: invited to answer
+
+    services.confirm(appt["appointment_id"], via="sms")
+    sender.process(reminder_msg(appt, key="m120"))
+    assert "CONFIRM" not in provider.smss[1][1].sms and "ANULEAZA" not in provider.smss[1][1].sms

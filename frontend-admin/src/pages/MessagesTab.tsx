@@ -208,7 +208,7 @@ export default function MessagesTab({ readOnly }: { readOnly: boolean }) {
           </div>
         )}
 
-        <Field label={labelOf("email_subject", "msgs.emailSubject")}>
+        <Field plain label={labelOf("email_subject", "msgs.emailSubject")}>
           <input
             ref={subjectRef}
             value={subject}
@@ -218,7 +218,7 @@ export default function MessagesTab({ readOnly }: { readOnly: boolean }) {
             onChange={(e) => setField("email_subject", e.target.value)}
           />
         </Field>
-        <Field label={labelOf("email_body", "msgs.emailBody")} hint={t("msgs.emailBodyHint")}>
+        <Field plain label={labelOf("email_body", "msgs.emailBody")} hint={t("msgs.emailBodyHint")}>
           <textarea
             ref={bodyRef}
             rows={6}
@@ -229,7 +229,7 @@ export default function MessagesTab({ readOnly }: { readOnly: boolean }) {
             onChange={(e) => setField("email_body", e.target.value)}
           />
         </Field>
-        <Field label={labelOf("sms_body", "msgs.smsBody")}>
+        <Field plain label={labelOf("sms_body", "msgs.smsBody")}>
           <textarea
             ref={smsRef}
             rows={3}

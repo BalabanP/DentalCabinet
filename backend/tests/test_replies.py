@@ -186,3 +186,66 @@ def test_signature_is_checked_when_a_signing_key_is_set(aws, monkeypatch):
 def test_other_events_are_acknowledged_and_ignored(aws):
     assert post({"event": "sms:delivered", "id": "x", "payload": {}}) == 200
     assert replies_list() == []
+
+
+def _sms_sent(appointment_id, when, sk="reminder#sms"):
+    from app import repositories as repo
+
+    repo._notifications().put_item(
+        Item={"appointment_id": appointment_id, "sk": sk, "kind": "reminder", "channel": "sms", "status": "sent",
+              "updated_at": when}
+    )
+
+
+def test_two_visits_the_reply_goes_to_the_one_that_got_the_latest_sms(aws):
+    uid = make_user()["user_id"]
+    first = book(uid, timedelta(days=2))
+    second = book(uid, timedelta(days=3))
+    _sms_sent(first["appointment_id"], "2026-10-12T08:00:00Z")
+    _sms_sent(second["appointment_id"], "2026-10-12T09:30:00Z")
+    assert post(sms_event("+40712345678", "CONFIRM")) == 200
+
+    assert call("GET", f"/appointments/{second['appointment_id']}")[1]["confirmed_at"]
+    assert not call("GET", f"/appointments/{first['appointment_id']}")[1].get("confirmed_at")
+    assert replies_list() == []
+
+
+def test_two_visits_cancel_uses_the_same_rule(aws):
+    uid = make_user()["user_id"]
+    first = book(uid, timedelta(days=2))
+    second = book(uid, timedelta(days=3))
+    _sms_sent(first["appointment_id"], "2026-10-12T10:00:00Z")
+    _sms_sent(second["appointment_id"], "2026-10-12T09:00:00Z")
+    assert post(sms_event("+40712345678", "ANULEAZA")) == 200
+
+    assert call("GET", f"/appointments/{first['appointment_id']}")[1]["status"] == "cancelled"
+    assert call("GET", f"/appointments/{second['appointment_id']}")[1]["status"] == "scheduled"
+
+
+def test_two_visits_sent_at_the_same_moment_still_go_to_the_inbox(aws):
+    uid = make_user()["user_id"]
+    first = book(uid, timedelta(days=2))
+    second = book(uid, timedelta(days=3))
+    for appt in (first, second):
+        _sms_sent(appt["appointment_id"], "2026-10-12T09:00:00Z")
+    assert post(sms_event("+40712345678", "CONFIRM")) == 200
+    assert [i["reason"] for i in replies_list()] == ["several_upcoming"]
+
+
+def test_failed_or_email_only_messages_do_not_count(aws):
+    from app import repositories as repo
+
+    uid = make_user()["user_id"]
+    first = book(uid, timedelta(days=2))
+    second = book(uid, timedelta(days=3))
+    repo._notifications().put_item(  # an e-mail, and a failed SMS: neither reached the visitor's phone
+        Item={"appointment_id": first["appointment_id"], "sk": "x#email", "channel": "email", "status": "sent",
+              "updated_at": "2026-10-12T11:00:00Z"}
+    )
+    repo._notifications().put_item(
+        Item={"appointment_id": first["appointment_id"], "sk": "y#sms", "channel": "sms", "status": "failed",
+              "updated_at": "2026-10-12T11:00:00Z"}
+    )
+    _sms_sent(second["appointment_id"], "2026-10-12T08:00:00Z")
+    assert post(sms_event("+40712345678", "CONFIRM")) == 200
+    assert call("GET", f"/appointments/{second['appointment_id']}")[1]["confirmed_at"]

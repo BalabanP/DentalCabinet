@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError } from "./api";
 import { useI18n } from "./i18n";
@@ -128,14 +128,32 @@ export function ConfirmDialog({
   );
 }
 
-export function Field({ label, hint, error, children }: { label: ReactNode; hint?: string; error?: string; children: ReactNode }) {
+/**
+ * A labelled form row. Use `plain` when the row holds buttons or a list (visitor picker, "reset" links): inside a
+ * <label>, iPhones (Safari and Chrome) pass every tap on to the first control in it, which here clicked the
+ * wrong button and undid the choice. A plain row is a <div>; the label text no longer focuses the box when tapped.
+ */
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+  plain,
+}: {
+  label: ReactNode;
+  hint?: string;
+  error?: string;
+  children: ReactNode;
+  plain?: boolean;
+}) {
+  const Row = plain ? "div" : "label";
   return (
-    <label className="field">
+    <Row className="field">
       <span className="field-label">{label}</span>
       {children}
       {hint && !error && <span className="field-hint">{hint}</span>}
       {error && <span className="field-error">{error}</span>}
-    </label>
+    </Row>
   );
 }
 
@@ -155,6 +173,59 @@ export function Toggle({
       <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
+  );
+}
+
+/**
+ * A whole-number box you can clear and retype. Binding a number input straight to a number turns an empty box
+ * into 0 and leaves a stuck "0" in front of whatever you type ("090"). Here the text is kept as typed;
+ * `onChange` gets the number, or null while the box is empty or not a number (`value` may then be null).
+ * Leaving the box puts back the last valid number.
+ */
+export function NumberInput({
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  disabled,
+}: {
+  value: number | null;
+  onChange: (n: number | null) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState(value === null ? "" : String(value));
+  const lastValid = useRef(value ?? 0);
+
+  // Follow changes made from outside (e.g. another unit picked), but never rewrite what is being typed.
+  useEffect(() => {
+    if (value === null) return;
+    lastValid.current = value;
+    setText((current) => (/^\d+$/.test(current) && Number(current) === value ? current : String(value)));
+  }, [value]);
+
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      step={step}
+      disabled={disabled}
+      value={text}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        onChange(/^\d+$/.test(next) ? Number(next) : null);
+      }}
+      onBlur={() => {
+        setText(String(lastValid.current));
+        if (value === null) onChange(lastValid.current);
+      }}
+    />
   );
 }
 

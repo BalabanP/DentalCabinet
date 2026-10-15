@@ -152,7 +152,7 @@ visitor replies -> your phone -> SMS Gateway app -> POST /webhooks/sms/<secret> 
 | CONFIRM, DA, OK, YES, CONFIRMAT | The visit is marked **confirmed** (green tick in the calendar, agenda and visit window). |
 | CANCEL, ANULEAZA, ANULEZ | The visit is **cancelled**, the slot is free again and the visitor gets the usual cancellation message. |
 | Anything else, a longer message, or a number not in the visitor list | Nothing changes. It appears in **Messages, Replies that need attention** (and a red number on the Messages tab) for staff. |
-| A reply from a visitor with **two or more** upcoming visits | Not guessed. It goes to the same list. |
+| A reply from a visitor with **two or more** upcoming visits | Applied to the visit that was sent the **most recent SMS** (a reply answers the last message). If no SMS was sent for any of them, or two were sent at the same moment, it goes to the same list. |
 
 A visit that is today or tomorrow and still unconfirmed shows an amber **?** in the calendar and "Awaiting confirmation" in the agenda.
 Moving a visit to another time clears its confirmation. Staff can also press **Mark as confirmed** in the visit window (for example after a phone call).

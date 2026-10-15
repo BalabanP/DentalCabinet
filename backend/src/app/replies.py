@@ -121,11 +121,14 @@ def handle_incoming(sender: str, text: str, message_id: str, received_at: str | 
     if not upcoming:
         _inbox("no_upcoming", sender, text, received_at, user, None)
         return "no_upcoming"
-    if len(upcoming) > 1:  # which visit does "CONFIRM" mean? Let reception sort it out.
-        _inbox("several_upcoming", sender, text, received_at, user, None)
-        return "several_upcoming"
-
-    appointment_id = upcoming[0]["appointment_id"]
+    if len(upcoming) == 1:
+        appointment_id = upcoming[0]["appointment_id"]
+    else:
+        # Several visits: a reply answers the last SMS we sent, so use the visit that message was about.
+        appointment_id = repo.latest_sms_visit([a["appointment_id"] for a in upcoming])
+        if appointment_id is None:  # no SMS to go by: let reception sort it out
+            _inbox("several_upcoming", sender, text, received_at, user, None)
+            return "several_upcoming"
     if action == "confirm":
         services.confirm(appointment_id, via="sms")
     else:

@@ -42,3 +42,28 @@ def test_unknown_locale_falls_back_to_english():
 def test_html_is_escaped():
     r = notifications.render("reminder", {"name": "<script>x</script>", "locale": "en"}, START, SETTINGS)
     assert "<script>" not in r.html
+
+
+@pytest.mark.parametrize("locale,hint", [("en", "Reply CONFIRM or CANCEL"), ("ro", "Raspundeti CONFIRM sau ANULEAZA")])
+def test_reminder_sms_asks_for_an_answer_unless_already_confirmed(locale, hint):
+    user = {"name": "Ana", "locale": locale}
+    asked = notifications.render("reminder", user, START, SETTINGS)
+    assert hint in asked.sms
+
+    done = notifications.render("reminder", user, START, SETTINGS, confirmed=True)
+    assert hint not in done.sms and "CONFIRM" not in done.sms
+    assert done.sms == asked.sms.replace(" " + hint + ".", "")  # nothing else changed
+    assert "24.10.2026" in done.sms and "09:00" in done.sms
+    assert done.text == asked.text  # the email never carried the sentence
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["X: reminder. Raspundeti CONFIRM sau ANULEAZA.", "X: reminder. Răspundeți CONFIRM sau ANULEAZĂ.", "X: reminder. reply confirm or cancel"],
+)
+def test_without_reply_hint_handles_accents_case_and_missing_full_stop(text):
+    assert notifications.without_reply_hint(text) == "X: reminder."
+
+
+def test_without_reply_hint_leaves_other_text_alone():
+    assert notifications.without_reply_hint("Cabinet: va asteptam la 10:00.") == "Cabinet: va asteptam la 10:00."

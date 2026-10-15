@@ -354,6 +354,29 @@ def find_users_by_phone(phone: str) -> list[dict]:
         kwargs["ExclusiveStartKey"] = res["LastEvaluatedKey"]
 
 
+def latest_sms_visit(appointment_ids: list[str]) -> Optional[str]:
+    """The visit that was sent an SMS most recently, i.e. the one a visitor's "CONFIRM" most likely answers.
+
+    None when no SMS was sent for any of them, or when two visits were sent one at the very same moment.
+    """
+    best: Optional[tuple[str, str]] = None
+    tie = False
+    for appointment_id in appointment_ids:
+        times = [
+            n["updated_at"]
+            for n in list_notifications(appointment_id)
+            if n.get("channel") == "sms" and n.get("status") == "sent"
+        ]
+        if not times:
+            continue
+        latest = max(times)
+        if best is None or latest > best[0]:
+            best, tie = (latest, appointment_id), False
+        elif latest == best[0]:
+            tie = True
+    return None if best is None or tie else best[1]
+
+
 def claim_inbound(message_id: str) -> bool:
     """True the first time a gateway message id is seen."""
     ttl = int((utc_now() + timedelta(days=7)).timestamp())

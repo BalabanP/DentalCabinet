@@ -53,7 +53,9 @@ def process(msg: dict) -> None:
     if not user:
         return
     settings = repo.get_reminder_settings()
-    rendered = notifications.render(kind, user, start, settings, repo.get_message_templates())
+    rendered = notifications.render(
+        kind, user, start, settings, repo.get_message_templates(), confirmed=bool(appt.get("confirmed_at"))
+    )
 
     errors = []
     for channel in _channels(settings, user):

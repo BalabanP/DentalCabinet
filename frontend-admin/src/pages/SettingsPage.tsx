@@ -6,7 +6,7 @@ import type { Key } from "../i18n";
 import type { ReminderRule, ReminderSettings, ScheduleSettings, TimeWindow, Weekday } from "../types";
 import { WEEKDAYS } from "../types";
 import MessagesTab from "./MessagesTab";
-import { Banner, ConfirmDialog, Field, humanMinutes, Spinner, Toggle, useBusy, useErrorText, useNotice } from "../ui";
+import { Banner, ConfirmDialog, Field, humanMinutes, NumberInput, Spinner, Toggle, useBusy, useErrorText, useNotice } from "../ui";
 
 type Unit = "minutes" | "hours" | "days";
 const UNIT_MINUTES: Record<Unit, number> = { minutes: 1, hours: 60, days: 1440 };
@@ -141,12 +141,11 @@ function RemindersTab({ initial, readOnly }: { initial: ReminderSettings; readOn
           return (
             <div className="rule" key={i}>
               <Toggle checked={rule.enabled} disabled={readOnly} onChange={(v) => setRule(i, { ...rule, enabled: v })} label={t("set.reminders.enabled")} />
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 value={h.value}
                 disabled={readOnly}
-                onChange={(e) => setRule(i, { ...rule, minutes_before: Math.round(Number(e.target.value) * UNIT_MINUTES[h.unit]) })}
+                onChange={(n) => n !== null && n >= 1 && setRule(i, { ...rule, minutes_before: Math.round(n * UNIT_MINUTES[h.unit]) })}
               />
               <select
                 value={h.unit}
@@ -235,7 +234,7 @@ function HoursTab({ initial, readOnly }: { initial: ScheduleSettings; readOnly: 
     <div className="card form-grid narrow">
       <p className="muted small">{t("set.hours.help")}</p>
       <Field label={t("set.hours.slot")}>
-        <input type="number" min={5} max={240} step={5} value={slot} disabled={readOnly} onChange={(e) => setSlot(Number(e.target.value))} />
+        <NumberInput min={5} max={240} step={5} value={slot} disabled={readOnly} onChange={(n) => n !== null && setSlot(n)} />
       </Field>
 
       {WEEKDAYS.map((d) => (

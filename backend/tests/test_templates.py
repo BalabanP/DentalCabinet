@@ -12,6 +12,12 @@ from app.timeutil import parse_iso, utc_now
 from handlers import sender
 from test_api import call, call_raw, make_user
 
+@pytest.fixture(autouse=True)
+def _any_hour(monkeypatch):
+    """Some tests book relative to "now"; working-hours rules are covered in test_availability."""
+    monkeypatch.setattr(services, "_ensure_working_hours", lambda *a, **k: None)
+
+
 START = datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc)  # 09:00 in Bucharest
 SETTINGS = ReminderSettings(cabinet_name="Dr. Pop Cabinet", timezone="Europe/Bucharest", cabinet_phone="+40211234567")
 USER = {"name": "Ana Pop", "locale": "ro"}

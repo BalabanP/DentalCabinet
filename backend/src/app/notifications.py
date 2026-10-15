@@ -121,8 +121,22 @@ class Rendered:
     sms: str  # SMS text before accent folding
 
 
+# The sentence that invites a visitor to answer. Left out once the visit is confirmed, so a person who
+# already said yes is not asked again.
+_REPLY_HINT = re.compile(r"\s*(reply confirm or cancel|r[aă]spunde[țtşs]i confirm sau anuleaz[aă])\.?", re.IGNORECASE)
+
+
+def without_reply_hint(sms: str) -> str:
+    return _REPLY_HINT.sub("", sms).strip()
+
+
 def render(
-    kind: str, user: dict, start_utc: datetime, settings: ReminderSettings, templates: MessageTemplates | None = None
+    kind: str,
+    user: dict,
+    start_utc: datetime,
+    settings: ReminderSettings,
+    templates: MessageTemplates | None = None,
+    confirmed: bool = False,
 ) -> Rendered:
     locale = user.get("locale", "en")
     if locale not in CONTACT:
@@ -144,7 +158,8 @@ def render(
         kind=kind, locale=locale, subject=subject, body=body, cabinet=ctx["cabinet"],
         date=ctx["date"], time=ctx["time"], contact=contact,
     )
-    return Rendered(subject=subject, text=text, html=html_body, sms=fill(fields["sms_body"], ctx))
+    sms = fill(fields["sms_body"], ctx)
+    return Rendered(subject=subject, text=text, html=html_body, sms=without_reply_hint(sms) if confirmed else sms)
 
 
 # ---------- providers ----------

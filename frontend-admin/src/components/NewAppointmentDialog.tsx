@@ -3,7 +3,7 @@ import { api, ApiError } from "../api";
 import { useData } from "../data";
 import { useI18n } from "../i18n";
 import type { Appointment } from "../types";
-import { Banner, Field, Modal, todayInZone, useBusy, useErrorText, useNotice } from "../ui";
+import { Banner, Field, Modal, NumberInput, todayInZone, useBusy, useErrorText, useNotice } from "../ui";
 import SlotPicker from "./SlotPicker";
 import VisitorForm from "./VisitorForm";
 import VisitorPicker from "./VisitorPicker";
@@ -34,12 +34,13 @@ export default function NewAppointmentDialog({
   const [userId, setUserId] = useState(presetUserId ?? "");
   const [date, setDate] = useState(initialStart?.slice(0, 10) ?? todayInZone(timezone, 1));
   const [time, setTime] = useState(initialStart?.slice(11, 16) ?? "09:00");
-  const [duration, setDuration] = useState(initialDuration ?? 30);
+  const [duration, setDuration] = useState<number | null>(initialDuration ?? 30); // null while the box is empty
   const [note, setNote] = useState("");
   const [conflict, setConflict] = useState(false);
   const [creatingVisitor, setCreatingVisitor] = useState(false);
 
-  const canSubmit = Boolean(userId && date && time && duration >= 5 && duration <= 480);
+  const durationOk = duration !== null && duration >= 5 && duration <= 480;
+  const canSubmit = Boolean(userId && date && time && durationOk);
 
   const submit = async (allowOverlap: boolean) => {
     await run(async () => {
@@ -47,7 +48,7 @@ export default function NewAppointmentDialog({
         const created = await api.createAppointment({
           user_id: userId,
           start_at: `${date}T${time}:00`,
-          duration_minutes: duration,
+          duration_minutes: duration ?? 30,
           internal_note: note.trim() || undefined,
           allow_overlap: allowOverlap || undefined,
         });
@@ -84,7 +85,7 @@ export default function NewAppointmentDialog({
         }
       >
         <div className="form-grid">
-          <Field label={t("appt.visitor")}>
+          <Field plain label={t("appt.visitor")}>
             <VisitorPicker value={userId} onChange={setUserId} onCreateNew={() => setCreatingVisitor(true)} />
           </Field>
           <div className="row2">
@@ -109,15 +110,14 @@ export default function NewAppointmentDialog({
                 />
               </div>
             </Field>
-            <Field label={t("appt.duration")}>
-              <input
-                type="number"
+            <Field label={t("appt.duration")} hint={t("appt.durationRange")} error={duration !== null && !durationOk ? t("appt.durationRange") : undefined}>
+              <NumberInput
                 min={5}
                 max={480}
                 step={5}
                 value={duration}
-                onChange={(e) => {
-                  setDuration(Number(e.target.value));
+                onChange={(n) => {
+                  setDuration(n);
                   setConflict(false);
                 }}
               />
@@ -125,7 +125,7 @@ export default function NewAppointmentDialog({
           </div>
           <SlotPicker
             date={date}
-            duration={duration}
+            duration={durationOk ? duration : 30}
             value={time}
             onPick={(v) => {
               setTime(v);
