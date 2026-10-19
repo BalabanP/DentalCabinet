@@ -15,6 +15,9 @@ import type {
   User,
   UserInput,
   SmsReply,
+  PatientDocument,
+  UploadTicket,
+  ExportBundle,
 } from "./types";
 
 export class ApiError extends Error {
@@ -86,6 +89,19 @@ export const api = {
   getPatient: (id: string) => request<Patient>("GET", `/users/${id}/patient`),
   putPatient: (id: string, notes: string) => request<Patient>("PUT", `/users/${id}/patient`, { body: { notes } }),
 
+  // patient documents
+  listDocuments: (id: string) =>
+    request<{ items: PatientDocument[]; max_bytes: number }>("GET", `/users/${id}/documents`),
+  startUpload: (id: string, body: { filename: string; content_type: string; size: number }) =>
+    request<UploadTicket>("POST", `/users/${id}/documents`, { body }),
+  completeUpload: (id: string, docId: string) =>
+    request<PatientDocument>("POST", `/users/${id}/documents/${docId}/complete`),
+  documentLink: (id: string, docId: string) =>
+    request<{ url: string }>("GET", `/users/${id}/documents/${docId}/download`).then((r) => r.url),
+  deleteDocument: (id: string, docId: string) => request<void>("DELETE", `/users/${id}/documents/${docId}`),
+  exportPatient: (id: string, lang: Locale) =>
+    request<ExportBundle>("GET", `/users/${id}/export`, { query: { lang } }),
+
   // appointments
   listAppointments: (from: string, to: string) =>
     request<{ items: Appointment[] }>("GET", "/appointments", { query: { from, to } }).then((r) => r.items),
@@ -130,3 +146,29 @@ export const api = {
   getSchedule: () => request<ScheduleSettings>("GET", "/settings/schedule"),
   putSchedule: (body: ScheduleSettings) => request<ScheduleSettings>("PUT", "/settings/schedule", { body }),
 };
+
+/**
+ * Send a file straight to storage with the signed link from `startUpload`. No login header: the link
+ * itself is the permission, and an extra Authorization header would make S3 refuse it.
+ */
+export async function putFile(ticket: UploadTicket, file: Blob): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(ticket.upload.url, { method: ticket.upload.method, headers: ticket.upload.headers, body: file });
+  } catch {
+    throw new ApiError(0, "network");
+  }
+  if (!res.ok) throw new ApiError(res.status, `upload failed (HTTP ${res.status})`);
+}
+
+/** Download a file from a signed link (used to put patient documents in the export ZIP). */
+export async function fetchFile(url: string): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new ApiError(0, "network");
+  }
+  if (!res.ok) throw new ApiError(res.status, `download failed (HTTP ${res.status})`);
+  return res.blob();
+}

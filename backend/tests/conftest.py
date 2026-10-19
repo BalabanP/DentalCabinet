@@ -28,6 +28,7 @@ TABLES = {
     ),
     "SETTINGS_TABLE": ("settings", "setting_id", None, []),
     "NOTIFICATIONS_TABLE": ("notifications", "appointment_id", "sk", []),
+    "DOCUMENTS_TABLE": ("documents", "user_id", "doc_id", []),
 }
 
 
@@ -71,6 +72,11 @@ def aws(monkeypatch):
         queue_url = sqs.create_queue(QueueName="reminders")["QueueUrl"]
         queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
         boto3.client("scheduler").create_schedule_group(Name="reminders")
+        boto3.client("s3").create_bucket(
+            Bucket="patient-docs", CreateBucketConfiguration={"LocationConstraint": "eu-central-1"}
+        )
+        monkeypatch.setenv("DOCUMENTS_BUCKET", "patient-docs")
+        monkeypatch.delenv("LOCAL_FILES_BASE", raising=False)
 
         monkeypatch.setenv("REMINDER_QUEUE_URL", queue_url)
         monkeypatch.setenv("REMINDER_QUEUE_ARN", queue_arn)

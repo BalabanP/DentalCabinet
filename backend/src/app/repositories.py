@@ -54,11 +54,14 @@ def _is_conditional_failure(exc: ClientError) -> bool:
     return exc.response["Error"]["Code"] == "ConditionalCheckFailedException"
 
 
-def _update(tbl, key: dict, changes: dict, key_attr: str) -> dict:
-    """SET the given attributes on an existing item; NotFound when the item does not exist."""
+def _update(tbl, key: dict, changes: dict, key_attr: str, remove: tuple[str, ...] = ()) -> dict:
+    """SET the given attributes (and REMOVE `remove`) on an existing item; NotFound when it does not exist."""
     names = {f"#f{i}": k for i, k in enumerate(changes)}
     values = {f":v{i}": v for i, v in enumerate(changes.values())}
     expr = "SET " + ", ".join(f"#f{i} = :v{i}" for i in range(len(changes)))
+    if remove:
+        names.update({f"#r{i}": k for i, k in enumerate(remove)})
+        expr += " REMOVE " + ", ".join(f"#r{i}" for i in range(len(remove)))
     try:
         res = tbl.update_item(
             Key=key,
@@ -98,7 +101,9 @@ def find_user_by_email(email: str) -> Optional[dict]:
 
 
 def create_user(data: dict) -> dict:
-    if find_user_by_email(data["email"]):
+    # No e-mail = no attribute at all: an index key (email-index) may not be empty or null.
+    data = {k: v for k, v in data.items() if not (k == "email" and not v)}
+    if data.get("email") and find_user_by_email(data["email"]):
         raise Conflict("a user with this email already exists")
     now = to_iso(utc_now())
     item = {"user_id": uuid.uuid4().hex, **data, "created_at": now, "updated_at": now}
@@ -134,7 +139,7 @@ def search_users(query: str, limit: int) -> list[dict]:
         for u in clean(res["Items"]):
             if (
                 q in u["name"].lower()
-                or q in u["email"]
+                or q in u.get("email", "")
                 or (len(q_digits) >= 3 and q_digits in re.sub(r"\D", "", u["phone"]))
             ):
                 matches.append(u)
@@ -146,12 +151,16 @@ def search_users(query: str, limit: int) -> list[dict]:
 
 
 def update_user(user_id: str, changes: dict) -> dict:
-    if "email" in changes:
+    remove: tuple[str, ...] = ()
+    if "email" in changes and not changes["email"]:  # cleared: drop the address
+        changes = {k: v for k, v in changes.items() if k != "email"}
+        remove = ("email",)
+    elif "email" in changes:
         other = find_user_by_email(changes["email"])
         if other and other["user_id"] != user_id:
             raise Conflict("a user with this email already exists")
     changes = {**changes, "updated_at": to_iso(utc_now())}
-    return _update(_users(), {"user_id": user_id}, changes, "user_id")
+    return _update(_users(), {"user_id": user_id}, changes, "user_id", remove)
 
 
 def delete_user(user_id: str) -> None:
@@ -407,3 +416,31 @@ def list_replies() -> list[dict]:
 
 def dismiss_reply(reply_id: str) -> None:
     _notifications().delete_item(Key={"appointment_id": "INBOX", "sk": reply_id})
+
+
+# ---------- patient documents (files live in S3, this table holds what they are) ----------
+
+
+def _documents():
+    return clients.table(get_config().documents_table)
+
+
+def put_document(item: dict) -> None:
+    _documents().put_item(Item=item)
+
+
+def get_document(user_id: str, doc_id: str) -> Optional[dict]:
+    res = _documents().get_item(Key={"user_id": user_id, "doc_id": doc_id})
+    return clean(res["Item"]) if "Item" in res else None
+
+
+def list_documents(user_id: str) -> list[dict]:
+    return _query_all(_documents(), KeyConditionExpression=Key("user_id").eq(user_id))
+
+
+def update_document(user_id: str, doc_id: str, changes: dict, remove: tuple[str, ...] = ()) -> dict:
+    return _update(_documents(), {"user_id": user_id, "doc_id": doc_id}, changes, "doc_id", remove)
+
+
+def delete_document(user_id: str, doc_id: str) -> None:
+    _documents().delete_item(Key={"user_id": user_id, "doc_id": doc_id})

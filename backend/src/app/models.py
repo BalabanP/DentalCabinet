@@ -28,27 +28,36 @@ class _Strict(BaseModel):
 # ---------- users ----------
 
 
+def _blank_to_none(v):
+    """An empty e-mail box means "no e-mail address"."""
+    return None if isinstance(v, str) and not v.strip() else v
+
+
 class UserIn(_Strict):
     name: str = Field(min_length=1, max_length=120)
-    email: EmailStr
+    email: Optional[EmailStr] = None  # optional: some patients have no e-mail; they get SMS only
     phone: Phone
     locale: Locale = "en"
     notify_email: bool = True
     notify_sms: bool = True
 
+    _blank_email = field_validator("email", mode="before")(_blank_to_none)
+
     @field_validator("email")
     @classmethod
-    def _lower_email(cls, v: str) -> str:
-        return v.lower()
+    def _lower_email(cls, v: Optional[str]) -> Optional[str]:
+        return v.lower() if v else None
 
 
 class UserPatch(_Strict):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    email: Optional[EmailStr] = None
+    email: Optional[EmailStr] = None  # "" or null removes the address
     phone: Optional[Phone] = None
     locale: Optional[Locale] = None
     notify_email: Optional[bool] = None
     notify_sms: Optional[bool] = None
+
+    _blank_email = field_validator("email", mode="before")(_blank_to_none)
 
     @field_validator("email")
     @classmethod
@@ -61,6 +70,14 @@ class UserPatch(_Strict):
 
 class PatientIn(_Strict):
     notes: str = Field(max_length=20000)
+
+
+class DocumentUploadIn(_Strict):
+    """Ask for a link to upload one file. The browser then sends the file straight to S3."""
+
+    filename: str = Field(min_length=1, max_length=200)
+    content_type: str = Field(min_length=1, max_length=120)
+    size: int = Field(gt=0)
 
 
 # ---------- appointments ----------

@@ -15,6 +15,8 @@ class Config:
     scheduler_group: str
     scheduler_role_arn: str
     ses_from_address: str
+    documents_table: str = ""
+    documents_bucket: str = ""
 
 
 @lru_cache
@@ -31,4 +33,6 @@ def get_config() -> Config:
         scheduler_group=e["SCHEDULER_GROUP"],
         scheduler_role_arn=e["SCHEDULER_ROLE_ARN"],
         ses_from_address=e.get("SES_FROM_ADDRESS", ""),
+        documents_table=e.get("DOCUMENTS_TABLE", ""),
+        documents_bucket=e.get("DOCUMENTS_BUCKET", ""),
     )

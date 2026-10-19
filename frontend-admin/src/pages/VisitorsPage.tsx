@@ -21,7 +21,7 @@ export default function VisitorsPage() {
     if (!q) return users;
     const qd = digits(q);
     return users.filter(
-      (u) => u.name.toLowerCase().includes(q) || u.email.includes(q) || (qd.length >= 3 && digits(u.phone).includes(qd)),
+      (u) => u.name.toLowerCase().includes(q) || (u.email ?? "").includes(q) || (qd.length >= 3 && digits(u.phone).includes(qd)),
     );
   }, [users, query]);
 
@@ -71,7 +71,7 @@ export default function VisitorsPage() {
                       <strong>{u.name}</strong>
                     </td>
                     <td data-label={t("vis.col.phone")}>{u.phone}</td>
-                    <td data-label={t("vis.col.email")}>{u.email}</td>
+                    <td data-label={t("vis.col.email")}>{u.email || "—"}</td>
                     <td data-label={t("vis.col.language")}>{u.locale.toUpperCase()}</td>
                     <td data-label={t("vis.col.notify")}>
                       <span title={t("msg.email")} className={`dot ${u.notify_email ? "on" : "off"}`}>

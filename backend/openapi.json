@@ -46,6 +46,9 @@
     },
     {
       "name": "Replies"
+    },
+    {
+      "name": "Documents"
     }
   ],
   "paths": {
@@ -558,6 +561,440 @@
             }
           }
         },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}/documents": {
+      "get": {
+        "summary": "Files attached to the patient (clinician/admin)",
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "listDocuments",
+        "responses": {
+          "200": {
+            "description": "Documents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      },
+      "post": {
+        "summary": "Step 1 of an upload: returns a 5-minute signed S3 link to PUT the file to (clinician/admin). JPG, PNG, PDF, DOC, DOCX; at most 20 MB",
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "startDocumentUpload",
+        "responses": {
+          "201": {
+            "description": "Upload link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadTicket"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentUploadInput"
+              }
+            }
+          }
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}/documents/{doc_id}/complete": {
+      "post": {
+        "summary": "Step 2: the file is in S3; check it and list it (clinician/admin)",
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "completeDocumentUpload",
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}/documents/{doc_id}/download": {
+      "get": {
+        "summary": "A 5-minute signed link that downloads the file (clinician/admin)",
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "downloadDocument",
+        "responses": {
+          "200": {
+            "description": "Link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}/documents/{doc_id}": {
+      "delete": {
+        "summary": "Delete the file from S3 and the list (clinician/admin)",
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "deleteDocument",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "doc_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:lambda:REGION:ACCOUNT_ID:function:FUNCTION_NAME",
+          "payloadFormatVersion": "2.0"
+        }
+      }
+    },
+    "/users/{user_id}/export": {
+      "get": {
+        "summary": "Everything about a patient: PDF summary (base64) + signed links to every file; the admin UI zips them (clinician/admin)",
+        "tags": [
+          "Documents"
+        ],
+        "operationId": "exportPatient",
+        "responses": {
+          "200": {
+            "description": "Export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportBundle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid token"
+          },
+          "403": {
+            "description": "Role not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "description": "Language of the PDF",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ro",
+                "en"
+              ],
+              "default": "ro"
+            }
+          }
+        ],
         "x-amazon-apigateway-integration": {
           "type": "aws_proxy",
           "httpMethod": "POST",
@@ -1741,9 +2178,9 @@
         "type": "object",
         "required": [
           "name",
-          "email",
           "phone"
         ],
+        "description": "email is optional (empty or missing = no e-mail; SMS only)",
         "additionalProperties": false,
         "properties": {
           "name": {
@@ -2139,6 +2576,133 @@
               },
               "receivedAt": {
                 "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "DocumentUploadInput": {
+        "type": "object",
+        "required": [
+          "filename",
+          "content_type",
+          "size"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "filename": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20971520
+          },
+          "content_type": {
+            "type": "string",
+            "enum": [
+              "image/jpeg",
+              "image/png",
+              "application/pdf",
+              "application/msword",
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ]
+          }
+        }
+      },
+      "Document": {
+        "type": "object",
+        "properties": {
+          "doc_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "uploaded_at": {
+            "type": "string"
+          },
+          "uploaded_by": {
+            "type": "string"
+          }
+        }
+      },
+      "DocumentList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Document"
+            }
+          },
+          "max_bytes": {
+            "type": "integer"
+          }
+        }
+      },
+      "UploadTicket": {
+        "type": "object",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/Document"
+          },
+          "upload": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string",
+                "enum": [
+                  "PUT"
+                ]
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ExportBundle": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "summary_pdf": {
+            "type": "string",
+            "format": "byte"
+          },
+          "documents_folder": {
+            "type": "string"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "integer"
+                },
+                "url": {
+                  "type": "string"
+                }
               }
             }
           }

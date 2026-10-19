@@ -32,6 +32,8 @@ os.environ.update(
     APPOINTMENTS_TABLE="appointments",
     SETTINGS_TABLE="settings",
     NOTIFICATIONS_TABLE="notifications",
+    DOCUMENTS_TABLE="documents",
+    DOCUMENTS_BUCKET="patient-docs",
     SCHEDULER_GROUP="reminders",
     SCHEDULER_ROLE_ARN="arn:aws:iam::123456789012:role/local",
     SES_FROM_ADDRESS="clinic@local.test",
@@ -48,6 +50,7 @@ TABLES = [
      [("user-index", "user_id", "start_at"), ("day-index", "day", "start_at")]),
     ("settings", "setting_id", None, []),
     ("notifications", "appointment_id", "sk", []),
+    ("documents", "user_id", "doc_id", []),
 ]
 
 
@@ -83,6 +86,9 @@ def create_queue_and_scheduler() -> None:
     os.environ["REMINDER_QUEUE_URL"] = url
     os.environ["REMINDER_QUEUE_ARN"] = arn
     boto3.client("scheduler").create_schedule_group(Name="reminders")
+    boto3.client("s3").create_bucket(
+        Bucket="patient-docs", CreateBucketConfiguration={"LocationConstraint": "eu-central-1"}
+    )
 
 
 def stamp() -> str:
@@ -193,10 +199,44 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Dev-Groups")
 
+    def _files(self, url) -> None:
+        """Stand-in for S3's signed links: PUT stores a patient file, GET hands it back."""
+        from urllib.parse import unquote
+
+        from app import clients
+
+        key = unquote(url.path[len("/_files/"):])
+        s3 = clients.s3()
+        if self.command == "PUT":
+            length = int(self.headers.get("Content-Length") or 0)
+            s3.put_object(Bucket="patient-docs", Key=key, Body=self.rfile.read(length),
+                          ContentType=self.headers.get("Content-Type", "application/octet-stream"))
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        try:
+            obj = s3.get_object(Bucket="patient-docs", Key=key)
+        except Exception:  # noqa: BLE001
+            self.send_response(404)
+            self._cors()
+            self.end_headers()
+            return
+        data = obj["Body"].read()
+        self.send_response(200)
+        self.send_header("Content-Type", obj.get("ContentType", "application/octet-stream"))
+        self.send_header("Content-Length", str(len(data)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(data)
+
     def _handle(self):
         from handlers import api
 
         url = urlsplit(self.path)
+        if url.path.startswith("/_files/"):
+            return self._files(url)
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length).decode() if length else None
         groups = (self.headers.get("X-Dev-Groups") or "admin").replace(",", " ")
@@ -243,6 +283,7 @@ def main() -> None:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     port = int(args[0]) if args else 8000
     os.environ.setdefault("SMS_WEBHOOK_TOKEN", "local-dev-token-0123456789")  # lets you fake a visitor's SMS reply
+    os.environ["LOCAL_FILES_BASE"] = f"http://127.0.0.1:{port}/_files"  # patient files stay in memory too
     mock = mock_aws()
     mock.start()
     create_tables()

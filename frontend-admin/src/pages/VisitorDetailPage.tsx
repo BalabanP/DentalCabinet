@@ -3,15 +3,17 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import AppointmentDialog from "../components/AppointmentDialog";
 import NewAppointmentDialog from "../components/NewAppointmentDialog";
+import PatientDocuments from "../components/PatientDocuments";
 import VisitorForm from "../components/VisitorForm";
 import { useData } from "../data";
+import { downloadPatientExport } from "../exportPatient";
 import { useI18n } from "../i18n";
 import type { Appointment } from "../types";
 import { Banner, ConfirmDialog, Spinner, StatusBadge, useBusy, useErrorText, useNotice } from "../ui";
 
 export default function VisitorDetailPage() {
   const { id = "" } = useParams();
-  const { t, dateTime } = useI18n();
+  const { t, dateTime, lang } = useI18n();
   const { userById, usersLoaded, removeUser, timezone, isClinician } = useData();
   const notify = useNotice();
   const errorText = useErrorText();
@@ -78,6 +80,17 @@ export default function VisitorDetailPage() {
       }
     });
 
+  const exportZip = () =>
+    run(async () => {
+      notify("ok", t("vis.exporting"));
+      try {
+        await downloadPatientExport(id, lang);
+        notify("ok", t("vis.exported"));
+      } catch (err) {
+        notify("error", errorText(err));
+      }
+    });
+
   const remove = () =>
     run(async () => {
       try {
@@ -101,6 +114,11 @@ export default function VisitorDetailPage() {
           <button className="btn" onClick={() => setEditing(true)}>
             {t("vis.detail.edit")}
           </button>
+          {isClinician && (
+            <button className="btn" disabled={busy} onClick={exportZip}>
+              {t("vis.export")}
+            </button>
+          )}
           <button className="btn primary" onClick={() => setBooking(true)}>
             + {t("vis.detail.book")}
           </button>
@@ -113,7 +131,7 @@ export default function VisitorDetailPage() {
             <dt>{t("vis.col.phone")}</dt>
             <dd>{user.phone}</dd>
             <dt>{t("vis.col.email")}</dt>
-            <dd>{user.email}</dd>
+            <dd>{user.email || "—"}</dd>
             <dt>{t("vis.col.language")}</dt>
             <dd>{user.locale === "en" || user.locale === "ro" ? t(`lang.${user.locale}`) : String(user.locale)}</dd>
             <dt>{t("vis.col.notify")}</dt>
@@ -146,6 +164,8 @@ export default function VisitorDetailPage() {
           )}
         </section>
       </div>
+
+      {isClinician && <PatientDocuments userId={id} />}
 
       <section className="card">
         <h3>{t("vis.detail.appointments")}</h3>

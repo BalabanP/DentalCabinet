@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from . import reminders, repositories as repo
+from . import documents, reminders, repositories as repo
 from .errors import BadRequest, Conflict, NotFound
 from .log import logger
 from .models import WEEKDAYS, AppointmentIn, AppointmentPatch
@@ -261,5 +261,6 @@ def delete_user(user_id: str) -> None:
     ]
     if upcoming:
         raise Conflict("user has upcoming appointments; cancel them first")
+    documents.delete_all(user_id)  # files in S3 go with the patient (erasure requests)
     repo.delete_patient(user_id)
     repo.delete_user(user_id)

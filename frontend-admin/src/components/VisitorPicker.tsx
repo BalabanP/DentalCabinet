@@ -24,7 +24,7 @@ export default function VisitorPicker({
     if (!q) return users.slice(0, 8);
     const qd = digits(q);
     return users
-      .filter((u) => u.name.toLowerCase().includes(q) || u.email.includes(q) || (qd.length >= 3 && digits(u.phone).includes(qd)))
+      .filter((u) => u.name.toLowerCase().includes(q) || (u.email ?? "").includes(q) || (qd.length >= 3 && digits(u.phone).includes(qd)))
       .slice(0, 8);
   }, [users, query]);
 
@@ -34,7 +34,7 @@ export default function VisitorPicker({
         <div>
           <strong>{selected.name}</strong>
           <div className="muted small">
-            {selected.phone} · {selected.email}
+            {[selected.phone, selected.email].filter(Boolean).join(" · ")}
           </div>
         </div>
         <button type="button" className="btn small" onClick={() => onChange("")}>
@@ -53,7 +53,7 @@ export default function VisitorPicker({
           <button type="button" key={u.user_id} className="picker-item" onClick={() => onChange(u.user_id)}>
             <strong>{u.name}</strong>
             <span className="muted small">
-              {u.phone} · {u.email}
+              {[u.phone, u.email].filter(Boolean).join(" · ")}
             </span>
           </button>
         ))}

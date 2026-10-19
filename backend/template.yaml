@@ -70,6 +70,8 @@ Globals:
         APPOINTMENTS_TABLE: !Ref AppointmentsTable
         SETTINGS_TABLE: !Ref SettingsTable
         NOTIFICATIONS_TABLE: !Ref NotificationsTable
+        DOCUMENTS_TABLE: !Ref DocumentsTable
+        DOCUMENTS_BUCKET: !Ref DocumentsBucket
         REMINDER_QUEUE_URL: !Ref ReminderQueue
         REMINDER_QUEUE_ARN: !GetAtt ReminderQueue.Arn
         SCHEDULER_GROUP: !Ref ReminderScheduleGroup
@@ -134,6 +136,58 @@ Resources:
       SSESpecification: !If [UseKey, { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }, { SSEEnabled: false }]
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
       DeletionProtectionEnabled: !If [IsProd, true, false]
+
+  # ------------------------------------------------------------------ patient documents
+  # Files attached to a patient (photos, Word, PDF). The table says what they are; the bytes live in S3.
+  DocumentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: user_id, AttributeType: S }
+        - { AttributeName: doc_id, AttributeType: S }
+      KeySchema:
+        - { AttributeName: user_id, KeyType: HASH }
+        - { AttributeName: doc_id, KeyType: RANGE }
+      TimeToLiveSpecification: { AttributeName: ttl, Enabled: true }  # uploads never completed
+      SSESpecification: !If [UseKey, { SSEEnabled: true, SSEType: KMS, KMSMasterKeyId: !GetAtt DataKey.Arn }, { SSEEnabled: false }]
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      DeletionProtectionEnabled: !If [IsProd, true, false]
+
+  # Private, encrypted, never public. The browser uploads and downloads with 5-minute signed links,
+  # so it needs CORS for PUT/GET from the admin site. Kept if the stack is deleted (medical records).
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: !If
+              - UseKey
+              - { SSEAlgorithm: "aws:kms", KMSMasterKeyID: !GetAtt DataKey.Arn }
+              - { SSEAlgorithm: AES256 }
+            BucketKeyEnabled: !If [UseKey, true, false]
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, PUT]
+            AllowedOrigins: !Split [",", !Ref CorsOrigin]
+            AllowedHeaders: ["*"]
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
 
   AppointmentsTable:
     Type: AWS::DynamoDB::Table
@@ -274,6 +328,8 @@ Resources:
         - DynamoDBCrudPolicy: { TableName: !Ref PatientsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref AppointmentsTable }
         - DynamoDBCrudPolicy: { TableName: !Ref SettingsTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref DocumentsTable }
+        - S3CrudPolicy: { BucketName: !Ref DocumentsBucket }
         # Crud (not Read): visitor SMS replies and their de-duplication records live in this table.
         - DynamoDBCrudPolicy: { TableName: !Ref NotificationsTable }
         - SQSSendMessagePolicy: { QueueName: !GetAtt ReminderQueue.QueueName }
@@ -573,6 +629,9 @@ Outputs:
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
   UserPoolId:
     Value: !Ref UserPool
+  DocumentsBucketName:
+    Description: Private bucket holding the files attached to patients
+    Value: !Ref DocumentsBucket
   UserPoolClientId:
     Value: !Ref UserPoolClient
   ChatApiKeySecretArn:

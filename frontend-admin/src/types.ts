@@ -3,7 +3,7 @@ export type Locale = "en" | "ro";
 export type User = {
   user_id: string;
   name: string;
-  email: string;
+  email?: string; // optional: patients without e-mail get SMS only
   phone: string;
   locale: Locale;
   notify_email: boolean;
@@ -11,7 +11,7 @@ export type User = {
   created_at: string;
   updated_at: string;
 };
-export type UserInput = Omit<User, "user_id" | "created_at" | "updated_at">;
+export type UserInput = Omit<User, "user_id" | "created_at" | "updated_at" | "email"> & { email: string }; // "" = none
 
 export type AppointmentStatus = "scheduled" | "cancelled" | "completed" | "no_show";
 
@@ -94,4 +94,27 @@ export type SmsReply = {
   reason: "unknown_sender" | "unrecognised" | "no_upcoming" | "several_upcoming";
   user_id?: string;
   user_name?: string;
+};
+
+/** A file attached to a patient (stored in S3). */
+export type PatientDocument = {
+  doc_id: string;
+  name: string;
+  content_type: string;
+  size: number;
+  uploaded_at?: string;
+  uploaded_by?: string;
+};
+
+export type UploadTicket = {
+  document: PatientDocument;
+  upload: { url: string; method: "PUT"; headers: Record<string, string> };
+};
+
+/** What the export endpoint returns; the browser turns it into a ZIP. */
+export type ExportBundle = {
+  filename: string;
+  summary_pdf: string; // base64
+  documents_folder: string;
+  documents: { name: string; size: number; url: string }[];
 };

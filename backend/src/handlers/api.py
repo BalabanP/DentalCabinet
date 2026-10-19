@@ -10,12 +10,13 @@ import os
 from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, CORSConfig, Response, content_types
 from pydantic import ValidationError
 
-from app import notifications, replies, repositories as repo, services
+from app import documents, export, notifications, replies, repositories as repo, services
 from app.errors import AppError, BadRequest, Forbidden, NotFound
 from app.log import logger
 from app.models import (
     AppointmentIn,
     AppointmentPatch,
+    DocumentUploadIn,
     MessageTemplates,
     PatientIn,
     ReminderSettings,
@@ -186,6 +187,52 @@ def put_patient(user_id: str):
         raise NotFound("user not found")
     data = PatientIn.model_validate(_body())
     return repo.upsert_patient(user_id, data.notes, _actor())
+
+
+# ---------- patient documents (clinicians, like the notes) ----------
+
+
+@app.get("/users/<user_id>/documents")
+def list_documents(user_id: str):
+    require(CLINICAL)
+    if not repo.get_user(user_id):
+        raise NotFound("user not found")
+    return {"items": documents.list_ready(user_id), "max_bytes": documents.MAX_BYTES}
+
+
+@app.post("/users/<user_id>/documents")
+def start_document_upload(user_id: str):
+    """Step 1 of an upload: returns a short-lived link the browser PUTs the file to."""
+    require(CLINICAL)
+    return _json(201, documents.start_upload(user_id, DocumentUploadIn.model_validate(_body()), _actor()))
+
+
+@app.post("/users/<user_id>/documents/<doc_id>/complete")
+def complete_document_upload(user_id: str, doc_id: str):
+    """Step 2: the file is in S3; check it and show it in the list."""
+    require(CLINICAL)
+    return documents.complete_upload(user_id, doc_id)
+
+
+@app.get("/users/<user_id>/documents/<doc_id>/download")
+def download_document(user_id: str, doc_id: str):
+    require(CLINICAL)
+    return {"url": documents.download_url(documents.get_ready(user_id, doc_id))}
+
+
+@app.delete("/users/<user_id>/documents/<doc_id>")
+def delete_document(user_id: str, doc_id: str):
+    require(CLINICAL)
+    documents.delete(user_id, doc_id)
+    return Response(status_code=204, body="")
+
+
+@app.get("/users/<user_id>/export")
+def export_patient(user_id: str):
+    """PDF summary (base64) + download links for every file; the browser zips them together."""
+    require(CLINICAL)
+    lang = app.current_event.get_query_string_value("lang") or "ro"
+    return export.export_bundle(user_id, "en" if lang == "en" else "ro")
 
 
 # ---------- appointments ----------

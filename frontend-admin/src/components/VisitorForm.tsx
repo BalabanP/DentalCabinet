@@ -33,7 +33,7 @@ export default function VisitorForm({
 
   const errors = {
     name: form.name.trim() ? "" : t("vis.form.required"),
-    email: EMAIL.test(form.email.trim()) ? "" : t("vis.form.invalidEmail"),
+    email: !form.email.trim() || EMAIL.test(form.email.trim()) ? "" : t("vis.form.invalidEmail"), // optional
     phone: E164.test(form.phone.replace(/[\s-]/g, "")) ? "" : t("vis.form.invalidPhone"),
   };
   const valid = !errors.name && !errors.email && !errors.phone;
@@ -78,7 +78,7 @@ export default function VisitorForm({
         <Field label={t("vis.form.name")} error={touched ? errors.name : ""}>
           <input value={form.name} onChange={(e) => set("name", e.target.value)} autoFocus />
         </Field>
-        <Field label={t("vis.form.email")} error={touched ? errors.email : ""}>
+        <Field label={t("vis.form.emailOptional")} hint={t("vis.form.emailHint")} error={touched ? errors.email : ""}>
           <input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
         </Field>
         <Field label={t("vis.form.phone")} hint={t("vis.form.phoneHint")} error={touched ? errors.phone : ""}>

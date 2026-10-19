@@ -188,6 +188,30 @@ Moving a visit to another time clears its confirmation. Staff can also press **M
 - Locally: `python local\server.py 8000 --seed` prints a PowerShell line that fakes a visitor's CONFIRM.
 - Reminder texts you customised in the admin UI keep your wording. Add the reply sentence yourself if you want it.
 
+## Patient documents and export
+
+On a patient's page, clinicians and admins see a **Documents** card under the clinical notes:
+
+- **Attach files**: JPG, PNG, PDF, Word (.doc / .docx), up to 20 MB each, several at once.
+- **Open** downloads the file; **Delete** removes it permanently.
+- **Export (ZIP)** (top of the page) downloads one ZIP: a PDF summary (details, clinical notes, every visit, list of
+  files) plus a `documente` / `documents` folder with every attached file in its original format. The PDF is in the
+  language the admin UI is set to.
+
+Reception cannot see documents or export, the same rule as the clinical notes. Deleting a patient also deletes their files.
+
+**How it is stored (cheap and private)**
+- The files go to a private, encrypted S3 bucket created by the stack (`DocumentsBucketName` in the outputs). Nothing
+  in it is public. The browser uploads and downloads with signed links that work for 5 minutes and only for that one file.
+- Files never pass through the API (so there is no 6 MB Lambda limit); a small DynamoDB table records what each file is.
+- Cost: S3 storage is a few cents per GB per month, plus fractions of a cent per upload/download. For a cabinet that is
+  usually well under 1 USD a month.
+- The bucket and the table are **kept** if you delete the stack (they hold medical records); delete them by hand if you
+  really mean to.
+- If you set `CorsOrigin` to your site address instead of `*`, uploads are allowed from that address only.
+
+E-mail is optional for a patient. Without one, reminders go by SMS only.
+
 ## Cost switches (all off by default)
 | Parameter | Turns on | Costs |
 |---|---|---|
